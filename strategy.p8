@@ -203,11 +203,11 @@ function options(opt,x,y,w,sl)
 	sx=#opt[w]
 	rectfill(x-2,y-2,x+sx*4,y+sy+2,0)
 	for o=1,#opt do
-		print(opt[o],x,y+(o-1)*8,7)
+		local col=7
+		if(o==sl) col=11
+		print(opt[o],x,y+(o-1)*8,col)
 	end
 	rect(x-2,y-2,x+sx*4,y+sy+2,7)
-	
-	
 end
 
 
