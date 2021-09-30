@@ -18,9 +18,9 @@ turn=1
 in_battle=true
 cur={x=8,y=8}
 menus={}
-
+path={}
 function _init()
-	init_units(0)
+	init_units()
 	r=place_unit(1,1,anya)
 	make_menu(32,32,64,32,nil,{"move","attack","guard"})
 end
@@ -29,6 +29,7 @@ end
 
 function _update()
 	active_men=menus[#menus]
+	act_un=units[turn]
 	if(active_men) then
 		active_men.update(active_men)
 		return
@@ -51,15 +52,16 @@ function _draw()
 	if(in_battle) then
 		foreach(units,draw_unit)
 		foreach(menus,draw_menu)
+		if(not act_un.enemy) then
+			print(act_un.name, camx,camy+112,7)
+			print("hp:"..get_stat(act_un,"hp").."/"..get_stat(act_un,"maxhp"), camx,camy+120)
+			print("atk:"..get_stat(act_un,"atk"),camx+44,camy+112)
+			print("def:"..get_stat(act_un,"def"),camx+44,camy+120)
+			print("spd:"..get_stat(act_un,"sp"),camx+88,camy+112)
+			print("ma:"..get_stat(act_un,"ma").."/"..get_stat(act_un,"maxma"),camx+88,camy+120)
+		end
 	end
-	
-	
-	print("anya", camx,camy+112)
-	print("hp:50/50", camx,camy+120)
-	print("atk:50",camx+44,camy+112)
-	print("def:20",camx+44,camy+120)
-	print("spd:10",camx+88,camy+112)
-	print("ma:100/100",camx+88,camy+120)
+
 
 	
 end
@@ -76,6 +78,7 @@ function make_unit(name,k,hp,def,atk,sp,ma,wp)
 		["atk"]=atk,
 		["sp"]=sp,
 		["ma"]=ma,
+		["maxma"]=ma,
 		spells={},
 		enemy=false,
 		weapon=wp --0 sword, 1 spear, 2 axe, 3 bow
@@ -94,13 +97,12 @@ function place_unit(x,y,stats)
 		y=y,
 		k=stats.k,
 		name=stats.name,
-		hp=stats.hp,
-		wp=stats.weapon,
 		stats=stats,
 		modifiers=clone(stats,1),
 		buffs={},
 		enemy=stats.enemy,
-		alive=true
+		alive=true,
+		
 	}
 	add(units,unit)
 end
@@ -238,7 +240,7 @@ function options(opt,x,y,sl)
 	for o=1,#opt do
 		local col=7
 		if(sl==o) col=11
-		print(opt[o],x,y+(o-1)*8,col)
+		print_just(opt[o],x,y+(o-1)*8,col)
 	end
 end
 
@@ -261,7 +263,7 @@ function draw_menu(m)
 	camx+m.x+m.w+2,
 	camy+m.y+m.h+2,7)
 
-	if(m.op) options(m.op,m.x,m.y,m.sl)  
+	if(m.op) options(m.op,m.x+m.w/2,m.y+8,m.sl)  
 	if(m.text) print_just(m.text,m.x+m.w/2,m.y+m.h/2,7)
 end
 -->8
@@ -297,6 +299,8 @@ function sel_menu(m)
 	if(m.sl>#m.op) m.sl=1
 	if(btnp(❎)) m.on_sel(m.sl)
 end
+
+
 __gfx__
 00000000000aa00000088000bbbbbbbb66666666aaaaaaaa00000000000000000000000000000000000000000000000000000000000000000000000000000000
 0000000000affa000088f800bbbbbbbb66666666a000000a00000000000000000000000000000000000000000000000000000000000000000000000000000000
