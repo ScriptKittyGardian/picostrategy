@@ -14,25 +14,31 @@ sx=16,
 sy=16
 }
 
+turn=1
+in_battle=true
+cur={x=8,y=8}
+menus={}
 
 function _init()
-	basestats={["maxhp"]=10}
-	r=place_unit(1,1,basestats)
-	ngrid=navgrid(trgt,{0})
-	--poke(0x5f58,0x1|0x2)
+	init_units(0)
+	r=place_unit(1,1,anya)
+	make_menu(32,32,64,32,nil,{"move","attack","guard"})
 end
-trgt={x=8,y=8}
-pos={x=8,y=8}
-path={}
+
+
+
 function _update()
-	lx=pos.x
-	ly=pos.y
-	
-	if(btnp(⬆️)) pos.y-=1
-	if(btnp(⬇️)) pos.y+=1
-	if(btnp(⬅️)) pos.x-=1
-	if(btnp(➡️)) pos.x+=1
-	if(lx!=pos.x or ly!=pos.y) path=find_path(pos,ngrid) 	
+	active_men=menus[#menus]
+	if(active_men) then
+		active_men.update(active_men)
+		return
+	end
+	if(cur) then
+		if(btnp(⬆️)) cur.y-=1
+		if(btnp(⬇️)) cur.y+=1
+		if(btnp(⬅️)) cur.x-=1
+		if(btnp(➡️)) cur.x+=1
+	end
 end
 
 function _draw()
@@ -41,11 +47,12 @@ function _draw()
 	map(0,0,flr(camx/8),flr(camy/8),
 	flr(camx/8)+16,
 	flr(camy/8)+14)
-	spr(5,pos.x*8,pos.y*8)
-	spr(2,trgt.x*8,trgt.y*8)
-	draw_path(path,8)
-	print(stat(7))
-	options({"move","attack","guard"},2,88,2)
+	if(cur) spr(5,cur.x*8,cur.y*8)
+	if(in_battle) then
+		foreach(units,draw_unit)
+		foreach(menus,draw_menu)
+	end
+	
 	
 	print("anya", camx,camy+112)
 	print("hp:50/50", camx,camy+120)
@@ -58,15 +65,44 @@ function _draw()
 end
 -->8
 --units
+
+function make_unit(name,k,hp,def,atk,sp,ma,wp)
+	st={
+		name=name,
+		k=k,
+		["hp"]=hp,
+		["maxhp"]=hp,
+		["def"]=def,
+		["atk"]=atk,
+		["sp"]=sp,
+		["ma"]=ma,
+		spells={},
+		enemy=false,
+		weapon=wp --0 sword, 1 spear, 2 axe, 3 bow
+	}
+	return st
+end
+
+function init_units()
+	anya=make_unit("anya",2,50,10,35,7,15,0)
+end
+
+
 function place_unit(x,y,stats)
 	unit= {
 		x=x,
 		y=y,
+		k=stats.k,
+		name=stats.name,
+		hp=stats.hp,
+		wp=stats.weapon,
 		stats=stats,
 		modifiers=clone(stats,1),
+		buffs={},
+		enemy=stats.enemy,
 		alive=true
 	}
-	return unit
+	add(units,unit)
 end
 
 function get_stat(unit,keyword)
@@ -198,20 +234,69 @@ function draw_path(p,range)
 end
 
 
-function options(opt,x,y,w,sl)
-	sy=#opt*7
-	sx=#opt[w]
-	rectfill(x-2,y-2,x+sx*4,y+sy+2,0)
+function options(opt,x,y,sl)
 	for o=1,#opt do
-		print(opt[o],x,y+(o-1)*8,7)
+		local col=7
+		if(sl==o) col=11
+		print(opt[o],x,y+(o-1)*8,col)
 	end
-	rect(x-2,y-2,x+sx*4,y+sy+2,7)
-	
-	
 end
 
 
 
+function draw_unit(u) 
+	spr(u.k,u.x*8,u.y*8)
+	if(u.stat_disp) spr(u.stat_disp,u.x*8,u.y*8)
+end
+
+function print_just(t,x,y,c)
+	print(t,x-(#t*2),y-4,c)
+end
+
+function draw_menu(m)
+	rectfill(camx+m.x-2,camy+m.y-2,
+	camx+m.x+m.w+2,
+	camy+m.y+m.h+2,0)
+	rect(camx+m.x-2,camy+m.y-2,
+	camx+m.x+m.w+2,
+	camy+m.y+m.h+2,7)
+
+	if(m.op) options(m.op,m.x,m.y,m.sl)  
+	if(m.text) print_just(m.text,m.x+m.w/2,m.y+m.h/2,7)
+end
+-->8
+--ui
+
+
+function make_menu(x,y,w,h,text,op,update,on_sel)
+	if(not update) then 
+		if(text) update=dismiss_wait
+		if(op) update=sel_menu
+	end
+	add(menus,{
+		x=x,
+		y=y,
+		w=w,
+		h=h,
+		text=text,
+		op=op,
+		sl=1,
+		update=update,
+		on_sel=on_sel
+	})
+end
+
+function dismiss_wait(m)
+	if(btnp(❎)) del(menus,m)
+end
+
+function sel_menu(m)
+	if(btnp(⬆️)) m.sl-=1
+	if(btnp(⬇️)) m.sl+=1
+	if(m.sl<1) m.sl=#m.op
+	if(m.sl>#m.op) m.sl=1
+	if(btnp(❎)) m.on_sel(m.sl)
+end
 __gfx__
 00000000000aa00000088000bbbbbbbb66666666aaaaaaaa00000000000000000000000000000000000000000000000000000000000000000000000000000000
 0000000000affa000088f800bbbbbbbb66666666a000000a00000000000000000000000000000000000000000000000000000000000000000000000000000000
