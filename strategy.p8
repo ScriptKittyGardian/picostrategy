@@ -19,22 +19,37 @@ in_battle=true
 cur={x=8,y=8}
 menus={}
 path={}
+act_un=nil
+camh=14
+camw=16
+focus=true
+slds={0}
+move_cost=1
+moving=false
+movespeed=15
+movetimer=0
 function _init()
 	init_units()
 	r=place_unit(1,1,anya)
-	make_menu(32,32,64,32,nil,{"move","attack","guard"})
+	next_turn()
 end
 
 
 
 function _update()
+	focus=false
 	active_men=menus[#menus]
-	act_un=units[turn]
+	if(moving) then
+		movetimer+=1
+		if(movetimer > movespeed) then
+		move_unit()
+		movetimer=0
+		end
+	end
 	if(active_men) then
 		active_men.update(active_men)
-		return
 	end
-	if(cur) then
+	if(cur and not focus) then
 		if(btnp(⬆️)) cur.y-=1
 		if(btnp(⬇️)) cur.y+=1
 		if(btnp(⬅️)) cur.x-=1
@@ -46,20 +61,25 @@ function _draw()
 	cls()
 	camera(camx,camy)
 	map(0,0,flr(camx/8),flr(camy/8),
-	flr(camx/8)+16,
-	flr(camy/8)+14)
+	flr(camx/8)+camw,
+	flr(camy/8)+camh)
 	if(cur) spr(5,cur.x*8,cur.y*8)
 	if(in_battle) then
 		foreach(units,draw_unit)
-		foreach(menus,draw_menu)
-		if(not act_un.enemy) then
-			print(act_un.name, camx,camy+112,7)
-			print("hp:"..get_stat(act_un,"hp").."/"..get_stat(act_un,"maxhp"), camx,camy+120)
-			print("atk:"..get_stat(act_un,"atk"),camx+44,camy+112)
-			print("def:"..get_stat(act_un,"def"),camx+44,camy+120)
-			print("spd:"..get_stat(act_un,"sp"),camx+88,camy+112)
-			print("ma:"..get_stat(act_un,"ma").."/"..get_stat(act_un,"maxma"),camx+88,camy+120)
+		--foreach(menus,function(a) a.draw(a) end)
+		if(active_men) active_men.draw(active_men)
+		line(camx,camy+111,camx+128,camy+111,7)
+		if(act_un) then
+			if(not act_un.enemy) then
+				print(act_un.name, camx,camy+112,7)
+				print("hp:"..get_stat(act_un,"hp").."/"..get_stat(act_un,"maxhp"), camx,camy+120)
+				print("atk:"..get_stat(act_un,"atk"),camx+44,camy+112)
+				print("def:"..get_stat(act_un,"def"),camx+44,camy+120)
+				print("spd:"..get_stat(act_un,"spd"),camx+88,camy+112)
+				print("ma:"..get_stat(act_un,"ma").."/"..get_stat(act_un,"maxma"),camx+88,camy+120)
+			end
 		end
+		
 	end
 
 
@@ -76,7 +96,7 @@ function make_unit(name,k,hp,def,atk,sp,ma,wp)
 		["maxhp"]=hp,
 		["def"]=def,
 		["atk"]=atk,
-		["sp"]=sp,
+		["spd"]=sp,
 		["ma"]=ma,
 		["maxma"]=ma,
 		spells={},
@@ -87,7 +107,7 @@ function make_unit(name,k,hp,def,atk,sp,ma,wp)
 end
 
 function init_units()
-	anya=make_unit("anya",2,50,10,35,7,15,0)
+	anya=make_unit("anya",2,50,10,35,100,15,0)
 end
 
 
@@ -102,6 +122,8 @@ function place_unit(x,y,stats)
 		buffs={},
 		enemy=stats.enemy,
 		alive=true,
+		nav=navgrid(x,y,slds),
+		ap=0
 		
 	}
 	add(units,unit)
@@ -117,9 +139,33 @@ end
 -->8
 --abilities
 
-
-
+function move_unit()
+	if(act_un.ap > 0 and #path > 0) then
+		act_un.x=path[#path].x
+		act_un.y=path[#path].y
+		deli(path,#path)
+		act_un.ap-=1
+	else
+		moving=false
+	end
+end
 -->8
+--turn logic
+
+
+function next_turn()
+	menus={}
+	turn+=1
+	if(turn > #units) turn=1
+	act_un=units[turn]
+	act_un.ap=get_stat(act_un,"spd")
+	if(not act_un.enemy) then
+		make_menu(2,77,24,32,nil,{"move","attack","guard","rest"},nil,b_menu)
+		cur={x=act_un.x,y=act_un.y}
+	end
+end
+-->8
+--util
 function clone(to_copy,val)
 	local cpy={}
 	local i, v = next(to_copy,nil)
@@ -129,11 +175,9 @@ function clone(to_copy,val)
 	end
 	return cpy
 end
--->8
---util
 
-function navgrid(st,flgs,en)
-	stack={{x=st.x,y=st.y,c=0}}
+function navgrid(sx,sy,flgs,tx,ty)
+	stack={{x=sx,y=sy,c=0}}
 	local pos=1
 	local sol = false
 	while pos <= #stack do
@@ -150,7 +194,7 @@ function navgrid(st,flgs,en)
 			--end
 		end
 		if(en) then
-			if(crd.x==en.x and crd.y==en.y) then
+			if(crd.x==tx and crd.y==tx) then
 				return stack
 			end
 		end
@@ -162,8 +206,8 @@ function navgrid(st,flgs,en)
 end
 
 function find_path(pos,grid)
-		returnstk={}
-		nxt=pos
+		local returnstk={}
+		nxt={x=pos.x,y=pos.y}
 		while nxt do
 			add(returnstk,nxt)
 			nxt=next_move(pos,grid)
@@ -222,12 +266,12 @@ end
 
 function draw_path(p,range)
 	if(#p > 1) then
-	last=p[1]
+	last=cur
 	col=9
 	for i=1,#p do
 		col=9
 		if(range) then
-		if(i < #p-range)  col=8 
+		if(i <= #p-range)  col=8 
 		end
 		line(last.x*8+4,last.y*8+4,p[i].x*8+4,p[i].y*8+4,col)
 		last=p[i]
@@ -263,18 +307,19 @@ function draw_menu(m)
 	camx+m.x+m.w+2,
 	camy+m.y+m.h+2,7)
 
-	if(m.op) options(m.op,m.x+m.w/2,m.y+8,m.sl)  
+	if(m.op) options(m.op,m.x+m.w/2,m.y+6,m.sl)  
 	if(m.text) print_just(m.text,m.x+m.w/2,m.y+m.h/2,7)
 end
 -->8
 --ui
 
 
-function make_menu(x,y,w,h,text,op,update,on_sel)
+function make_menu(x,y,w,h,text,op,update,on_sel,draw)
 	if(not update) then 
 		if(text) update=dismiss_wait
 		if(op) update=sel_menu
 	end
+	if(not draw) draw=draw_menu
 	add(menus,{
 		x=x,
 		y=y,
@@ -284,20 +329,46 @@ function make_menu(x,y,w,h,text,op,update,on_sel)
 		op=op,
 		sl=1,
 		update=update,
-		on_sel=on_sel
+		on_sel=on_sel,
+		draw=draw
 	})
 end
 
 function dismiss_wait(m)
+	focus=true
 	if(btnp(❎)) del(menus,m)
 end
 
 function sel_menu(m)
+	focus=true
 	if(btnp(⬆️)) m.sl-=1
 	if(btnp(⬇️)) m.sl+=1
 	if(m.sl<1) m.sl=#m.op
 	if(m.sl>#m.op) m.sl=1
 	if(btnp(❎)) m.on_sel(m.sl)
+end
+
+function b_menu(s)
+	if(s==1) then
+		make_menu(-4,-4,0,0,nil,nil,move_menu,nil,mm_draw)
+	end
+end
+
+function path_regen()
+	if(#path < 1) return true
+	if(path[1].x != cur.x or path[1].y != cur.y) return true
+
+	return false
+end
+
+function move_menu(m)
+	if(not moving and path_regen()) path=find_path(cur,act_un.nav)
+	if(btnp(❎)) moving=true
+	
+end
+
+function mm_draw(m)
+	draw_path(path,act_un.ap/move_cost)
 end
 
 
