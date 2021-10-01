@@ -26,8 +26,9 @@ focus=true
 slds={0}
 move_cost=1
 moving=false
-movespeed=15
+movespeed=5
 movetimer=0
+
 function _init()
 	init_units()
 	r=place_unit(1,1,anya)
@@ -38,6 +39,7 @@ end
 
 function _update()
 	focus=false
+	show_stats=true
 	active_men=menus[#menus]
 	if(moving) then
 		movetimer+=1
@@ -70,13 +72,13 @@ function _draw()
 		if(active_men) active_men.draw(active_men)
 		line(camx,camy+111,camx+128,camy+111,7)
 		if(act_un) then
-			if(not act_un.enemy) then
-				print(act_un.name, camx,camy+112,7)
-				print("hp:"..get_stat(act_un,"hp").."/"..get_stat(act_un,"maxhp"), camx,camy+120)
-				print("atk:"..get_stat(act_un,"atk"),camx+44,camy+112)
-				print("def:"..get_stat(act_un,"def"),camx+44,camy+120)
-				print("spd:"..get_stat(act_un,"spd"),camx+88,camy+112)
-				print("ma:"..get_stat(act_un,"ma").."/"..get_stat(act_un,"maxma"),camx+88,camy+120)
+			if(not act_un.enemy and show_stats) then
+				print(act_un.name.."\nhp:"
+				..get_stat(act_un,"hp").."/"..get_stat(act_un,"maxhp"), camx,camy+113,7)
+				print("atk:"..get_stat(act_un,"atk")..
+				"\ndef:"..get_stat(act_un,"def"),camx+44,camy+113)
+				print("spd:"..get_stat(act_un,"spd")
+				.."\nma:"..get_stat(act_un,"ma").."/"..get_stat(act_un,"maxma"),camx+88,camy+113)
 			end
 		end
 		
@@ -140,13 +142,20 @@ end
 --abilities
 
 function move_unit()
-	if(act_un.ap > 0 and #path > 0) then
-		act_un.x=path[#path].x
-		act_un.y=path[#path].y
-		deli(path,#path)
+	nc=path[#path]
+	if(act_un.ap > 0 and nc) then
+		if(nc.c == 0) then
+			del(path,nc)
+			move_unit()
+			return false
+		end
+		act_un.x=nc.x
+		act_un.y=nc.y
+		del(path,nc)
 		act_un.ap-=1
 	else
 		moving=false
+		act_un.nav=navgrid(act_un.x,act_un.y,slds)
 	end
 end
 -->8
@@ -207,11 +216,10 @@ end
 
 function find_path(pos,grid)
 		local returnstk={}
-		nxt={x=pos.x,y=pos.y}
-		while nxt do
-			add(returnstk,nxt)
-			nxt=next_move(pos,grid)
-			pos=nxt
+		pos=stack_has(grid,pos)
+		while pos do
+			add(returnstk,pos)
+			pos=next_move(pos,grid)
 		end
 		return returnstk
 end
@@ -363,12 +371,27 @@ end
 
 function move_menu(m)
 	if(not moving and path_regen()) path=find_path(cur,act_un.nav)
-	if(btnp(❎)) moving=true
+	if(btnp(❎)) then 
+		moving=true
+	end
 	
+	if(btnp(🅾️) and not moving) del(menus,m)
 end
 
 function mm_draw(m)
-	draw_path(path,act_un.ap/move_cost)
+	local r = act_un.ap/move_cost
+	draw_path(path,r)
+	show_stats=false
+	print(act_un.name,camx,camy+113,7)
+	if(not moving) print("❎ confirm\n🅾️ cancel",camx+60,camy+112)
+	consumption= max((#path-1)*move_cost,0)
+	col=7
+	if(consumption>act_un.ap) col=8
+	if(not moving) then 
+	print("ap used:"..consumption.."/"..act_un.ap,camx,camy+119,col)
+	else
+	print("moving...",camx,camy+119)
+	end
 end
 
 
