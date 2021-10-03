@@ -11,7 +11,7 @@ units={}
 
 bfield={
 sx=16,
-sy=16
+sy=14
 }
 
 turn=1
@@ -298,18 +298,30 @@ function round(n)
 	return ceil(n)
 end
 
+
+
 function los(x1,y1,x2,y2)
-	yinc=(y2-y1)/12
-	xinc=(x2-x1)/12
+	x1=x1*8+4
+	x2=x2*8+4
+	y1=y1*8+4
+	y2=y2*8+4
+	d=dist({x=x1,y=y1},{x=x2,y=y2})
+	yinc=(y2-y1)/d
+	xinc=(x2-x1)/d
 	ox=x1
 	oy=y1
-	for i=0,12 do
-		if(has_flag({x=round(x1/8),y=round(y1/8)},slds)) return true
+	seenstk={}
+	for i=0,d do
+		local crd = {x=round(x1/8),y=round(y1/8)}
+		if(has_flag(crd,slds)) return nil
+		if(not stack_has(seenstk,crd)) add(seenstk,crd)
 		y1+=yinc
 		x1+=xinc
 	end
-	return false
+	
+	return seenstk
 end
+
 -->8
 --rendering
 
@@ -363,10 +375,14 @@ function draw_menu(m)
 end
 
 function draw_los(cx,cy,r)
+	
+
 	for x=cx-r,cx+r do
 		for y=cy-r,cy+r do
+			if(in_battle({x=x,y=y})) then
 			if(dist({x=cx,y=cy},{x=x,y=y}) < r) then
-				if(not los(cx*8+4,cy*8+4,x*8+4,y*8+4)) spr(6,x*8,y*8)
+				if(los(cx,cy,x,y)) spr(6,x*8,y*8)
+			end
 			end
 		end
 	end
