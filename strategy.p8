@@ -5,7 +5,6 @@ __lua__
 camx=0
 camy=0
 
-grid_size=8
 
 units={}
 
@@ -93,7 +92,7 @@ end
 -->8
 --units
 
-function make_unit(name,k,hp,def,atk,sp,ma,wp)
+function make_unit(name,k,hp,def,atk,sp,ma,wp,aff)
 	st={
 		name=name,
 		k=k,
@@ -104,6 +103,8 @@ function make_unit(name,k,hp,def,atk,sp,ma,wp)
 		["spd"]=sp,
 		["ma"]=ma,
 		["maxma"]=ma,
+		["res"]={0,0,0},
+		typ=aff,
 		spells={},
 		enemy=false,
 		move_cost=1,
@@ -113,8 +114,8 @@ function make_unit(name,k,hp,def,atk,sp,ma,wp)
 end
 
 function init_units()
-	anya=make_unit("anya",2,50,10,35,100,15,0)
-	goblin=make_unit("goblin",17,12,5,15,4,0,0)
+	anya=make_unit("anya",2,50,10,35,100,15,"sword")
+	goblin=make_unit("goblin",17,12,5,15,4,0,"sword")
 	goblin.enemy=true
 end
 
@@ -125,9 +126,10 @@ function place_unit(x,y,stats)
 		y=y,
 		k=stats.k,
 		name=stats.name,
-		stats=stats,
+		stats=clone(stats),
 		modifiers=clone(stats,1),
 		buffs={},
+		weapon=stats.weapon,
 		enemy=stats.enemy,
 		alive=true,
 		nav=navgrid(x,y,slds),
@@ -141,12 +143,27 @@ function get_stat(unit,keyword)
 	return unit.stats[keyword] * unit.modifiers[keyword]
 end
 
+function change_stat(unit,key,change)
+	unit.stats[key] -= change
+end
 
 
 
 -->8
 --abilities
-
+atks ={
+["sword"] = {
+	dmg=0.75,
+	crit=10,
+	rng=1.5,
+	ap=3,
+	atk=basic_attack,
+	typ=0, --0 = phyiscal, 1=light, 2=dark
+	aoe=nil,
+	trgtd=true,
+	ma=0
+}
+}
 function move_unit()
 	nc=path[#path]
 	if(act_un.ap > 0 and nc) then
@@ -165,7 +182,21 @@ function move_unit()
 	end
 end
 
+function deal_dmg(trgt,atkr,dmg,typ)
+	dmg -= get_stat(trgt,"def") * 0.5
+	dmg -= dmg*trgt.stat["res"][typ]
+	if(typ==0 and trgt.stat.typ==0) dmg *= 0.75
+	if(typ==1 and trgt.stat.typ==2) dmg *= 0.75
+	if(typ==2 and trgt.stat.typ==1) dmg *= 0.75
+	change_stat(trgt,"hp",dmg)
+end
 
+
+function basic_attack(user,target,attack)
+	if(trgt.stats) then
+		deal_dmg(target,user,attack.dmg*get_stat(user,"atk"),attack.typ)
+	end
+end
 -->8
 --turn logic
 
@@ -177,7 +208,7 @@ function next_turn()
 	act_un=units[turn]
 	act_un.ap=get_stat(act_un,"spd")
 	if(not act_un.enemy) then
-		make_menu(2,77,24,32,nil,{"move","attack","guard","rest"},nil,b_menu)
+		make_menu(2,77,24,32,nil,{"move","attack","guard","rest"},nil,b_menu,nil,true)
 		cur={x=act_un.x,y=act_un.y}
 	end
 end
@@ -187,7 +218,12 @@ function clone(to_copy,val)
 	local cpy={}
 	local i, v = next(to_copy,nil)
 	while i do
-		cpy[i]=val
+		
+		if(val) then
+			cpy[i]=val
+		else
+			cpy[i]=v
+		end
 		i,v=next(to_copy,i)
 	end
 	return cpy
@@ -391,7 +427,7 @@ end
 --ui
 
 
-function make_menu(x,y,w,h,text,op,update,on_sel,draw)
+function make_menu(x,y,w,h,text,op,update,on_sel,draw,delte)
 	if(not update) then 
 		if(text) update=dismiss_wait
 		if(op) update=sel_menu
@@ -407,7 +443,8 @@ function make_menu(x,y,w,h,text,op,update,on_sel,draw)
 		sl=1,
 		update=update,
 		on_sel=on_sel,
-		draw=draw
+		draw=draw,
+		delte=delte
 	})
 end
 
@@ -423,12 +460,14 @@ function sel_menu(m)
 	if(m.sl<1) m.sl=#m.op
 	if(m.sl>#m.op) m.sl=1
 	if(btnp(❎)) m.on_sel(m.sl)
+	if(btnp(🅾️) and not m.delte) del(menus,m)
 end
 
 function b_menu(s)
 	if(s==1) then --move selection
 		make_menu(-4,-4,0,0,nil,nil,move_menu,nil,mm_draw)
 	elseif(s==2) then -- attack menu
+		make_menu(2,77,64,32,nil,{act_un.weapon.."("..atks[act_un.weapon].ap..")"},nil,atk_slct)
 	elseif(s==3) then -- guard menu
 	elseif(s==4) then -- rest
 		next_turn()
@@ -440,6 +479,23 @@ function path_regen()
 	if(#path < 1) return true
 	if(path[1].x != cur.x or path[1].y != cur.y) return true
 	return false
+end
+
+function atk_slct(s)
+	atkdata=nil
+	if(s==1) then
+		atkdata=atks[act_un.weapon]
+	end
+	if(atkdata==nil) return
+	if(atkdata.ap < act_un.ap) then
+		make_menu(32,64,64,16,"not enough ap!")
+		return
+	end
+	
+end
+
+function draw_atk(m)
+	
 end
 
 function move_menu(m)
@@ -466,13 +522,13 @@ end
 
 
 __gfx__
-00000000000aa00000088000bbbbbbbb66666666aaaaaaaa88888888000000000000000000000000000000000000000000000000000000000000000000000000
-0000000000affa000088f800bbbbbbbb66666666a000000a80000008000000000000000000000000000000000000000000000000000000000000000000000000
-00700700000ffa00008ff800bbbbbbbb66666666a000000a80000008000000000000000000000000000000000000000000000000000000000000000000000000
-00077000004444a008666680bbbbbbbb66666666a000000a80000008000000000000000000000000000000000000000000000000000000000000000000000000
-0007700000f55fa008f11f80bbbbbbbb66666666a000000a80000008000000000000000000000000000000000000000000000000000000000000000000000000
-007007000004400000055000bbbbbbbb66666666a000000a80000008000000000000000000000000000000000000000000000000000000000000000000000000
-0000000000f00f0000600600bbbbbbbb66666666a000000a80000008000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000aa00000088000bbbbbbbb66666666aaaaaaaa88888888000000000000006000000000000000000000000000000000000000000000000000000000
+0000000000affa000088f800bbbbbbbb66666666a000000a80000008000000000000766000000770000000000000000000000000000000000000000000000000
+00700700000ffa00008ff800bbbbbbbb66666666a000000a80000008000000000007760000007700000000000000000000000000000000000000000000000000
+00077000004444a008666680bbbbbbbb66666666a000000a80000008000600000077600000006000000000000000000000000000000000000000000000000000
+0007700000f55fa008f11f80bbbbbbbb66666666a000000a80000008006600000076000000000000000000000000000000000000000000000000000000000000
+007007000004400000055000bbbbbbbb66666666a000000a80000008066000000060000000000000000000000000000000000000000000000000000000000000
+0000000000f00f0000600600bbbbbbbb66666666a000000a80000008060000000060000000000000000000000000000000000000000000000000000000000000
 000000000440040000500500bbbbbbbb66666666aaaaaaaa88888888000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000330000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
