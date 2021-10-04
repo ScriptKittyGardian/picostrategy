@@ -65,7 +65,6 @@ function _draw()
 	map(0,0,flr(camx/8),flr(camy/8),
 	flr(camx/8)+camw,
 	flr(camy/8)+camh)
-	if(cur) spr(5,cur.x*8,cur.y*8)
 	
 	
 	if(in_battle) then
@@ -84,6 +83,7 @@ function _draw()
 		end
 		
 	end
+	if(cur) spr(5,cur.x*8,cur.y*8)
 
 
 	
@@ -154,9 +154,9 @@ atks ={
 ["sword"] = {
 	dmg=0.75,
 	crit=10,
-	rng=1.5,
+	rng=2,
 	ap=3,
-	check=los,
+	uselos=true,
 	atk=basic_attack,
 	typ=0, --0 = phyiscal, 1=light, 2=dark
 	aoe=nil,
@@ -278,10 +278,10 @@ function check_unit(x,y,ignore)
 	for u =1,#units do
 		un=units[u]
 		if(un.x==x and un.y==y and un != ignore) then
-			return true
+			return un
 		end
 	end
-	return false
+	return nil
 end
 
 function next_move(p,grid)
@@ -414,14 +414,16 @@ function draw_menu(m)
 	if(m.op) options(m.op,m.x+m.w/2,m.y+6,m.sl,m.text)  
 end
 
-function draw_los(cx,cy,r)
-	
-
+function draw_range(cx,cy,r,uselos)
 	for x=cx-r,cx+r do
 		for y=cy-r,cy+r do
 			if(in_battle({x=x,y=y})) then
 			if(dist({x=cx,y=cy},{x=x,y=y}) < r) then
-				if(los(cx,cy,x,y)) spr(6,x*8,y*8)
+				d=true
+				if((uselos)) then
+					d= los(cx,cy,x,y)
+				end
+				if(d) spr(6,x*8,y*8)
 			end
 			end
 		end
@@ -491,14 +493,12 @@ function atk_slct(s)
 		atkdata=atks[act_un.weapon]
 	end
 	if(atkdata==nil) return
-	if(atkdata.ap < act_un.ap) then
+	if(atkdata.ap > act_un.ap) then
 		make_menu(32,64,64,16,"not enough ap!")
 		return
+	elseif(atkdata.trgtd) then
+		make_menu(0,0,0,0,nil,nil,target_update,nil,target_draw)
 	end
-	
-end
-
-function draw_atk(m)
 	
 end
 
@@ -525,6 +525,18 @@ function mm_draw(m)
 end
 
 
+function target_update(m)
+	
+
+end
+
+function target_draw(m)
+	show_stats=false
+	draw_range(act_un.x,act_un.y,atkdata.rng,atkdata.uselos)
+	print("❎ confirm\n🅾️ cancel",camx+60,camy+113)
+
+
+end
 __gfx__
 00000000000aa00000088000bbbbbbbb66666666aaaaaaaa88888888000000000000006000000000000000000000000000000000000000000000000000000000
 0000000000affa000088f800bbbbbbbb66666666a000000a80000008000000000000766000000770000000000000000000000000000000000000000000000000
