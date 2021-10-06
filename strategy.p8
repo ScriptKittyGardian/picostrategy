@@ -31,6 +31,7 @@ function _init()
 	init_units()
 	place_unit(4,1,goblin)
 	place_unit(1,1,anya)
+	place_unit(4,2,goblin)
 	next_turn()
 end
 
@@ -107,7 +108,7 @@ function make_unit(name,k,hp,def,atk,sp,ma,wp,aff)
 		["spd"]=sp,
 		["ma"]=ma,
 		["maxma"]=ma,
-		["res"]={0,0,0},
+		res={0,0,0},
 		typ=aff,
 		spells={},
 		enemy=false,
@@ -162,6 +163,8 @@ end
 
 
 -->8
+--abilities
+
 
 function move_unit()
 	nc=path[#path]
@@ -183,7 +186,7 @@ end
 
 function deal_dmg(trgt,atkr,dmg,typ)
 	dmg -= get_stat(trgt,"def") * 2
-	dmg -= dmg*trgt.stats["res"][typ]
+	dmg -= dmg*trgt.stats.res[typ]
 	if(typ==0 and trgt.stats.typ==0) dmg *= 0.75
 	if(typ==1 and trgt.stats.typ==2) dmg *= 0.75
 	if(typ==2 and trgt.stats.typ==1) dmg *= 0.75
@@ -197,7 +200,6 @@ function basic_attack(user,target,attack)
 	end
 end
 
---abilities
 atks ={
 ["sword"] = {
 	dmg=0.75,
