@@ -29,7 +29,7 @@ movetimer=0
 
 function _init()
 	init_units()
-	place_unit(10,12,goblin)
+	place_unit(4,1,goblin)
 	place_unit(1,1,anya)
 	next_turn()
 end
@@ -91,6 +91,11 @@ end
 -->8
 --units
 
+function standard_death(u)
+	u.alive=false
+	u.k=18
+end
+
 function make_unit(name,k,hp,def,atk,sp,ma,wp,aff)
 	st={
 		name=name,
@@ -107,20 +112,21 @@ function make_unit(name,k,hp,def,atk,sp,ma,wp,aff)
 		spells={},
 		enemy=false,
 		move_cost=1,
+		die=standard_death,
 		weapon=wp --0 sword, 1 spear, 2 axe, 3 bow
 	}
 	return st
 end
 
 function init_units()
-	anya=make_unit("anya",2,50,10,35,100,15,"sword")
+	anya=make_unit("anya",2,50,10,35,10,15,"sword")
 	goblin=make_unit("goblin",17,12,5,15,4,0,"sword")
 	goblin.enemy=true
 end
 
 
 function place_unit(x,y,stats)
-	unit= {
+	local unit= {
 		x=x,
 		y=y,
 		k=stats.k,
@@ -143,27 +149,20 @@ function get_stat(unit,keyword)
 end
 
 function change_stat(unit,key,change)
-	unit.stats[key] -= change
+	unit.stats[key] += change
+	if(get_stat(unit,"hp") <= 0) then
+		unit.stats.die(unit)
+	end
 end
 
 
 
+
+
+
+
 -->8
---abilities
-atks ={
-["sword"] = {
-	dmg=0.75,
-	crit=10,
-	rng=2,
-	ap=3,
-	uselos=true,
-	atk=basic_attack,
-	typ=0, --0 = phyiscal, 1=light, 2=dark
-	aoe=nil,
-	trgtd=true,
-	ma=0
-}
-}
+
 function move_unit()
 	nc=path[#path]
 	if(act_un.ap > 0 and nc) then
@@ -183,12 +182,12 @@ function move_unit()
 end
 
 function deal_dmg(trgt,atkr,dmg,typ)
-	dmg -= get_stat(trgt,"def") * 0.5
-	dmg -= dmg*trgt.stat["res"][typ]
-	if(typ==0 and trgt.stat.typ==0) dmg *= 0.75
-	if(typ==1 and trgt.stat.typ==2) dmg *= 0.75
-	if(typ==2 and trgt.stat.typ==1) dmg *= 0.75
-	change_stat(trgt,"hp",dmg)
+	dmg -= get_stat(trgt,"def") * 2
+	dmg -= dmg*trgt.stats["res"][typ]
+	if(typ==0 and trgt.stats.typ==0) dmg *= 0.75
+	if(typ==1 and trgt.stats.typ==2) dmg *= 0.75
+	if(typ==2 and trgt.stats.typ==1) dmg *= 0.75
+	change_stat(trgt,"hp",-round(dmg))
 end
 
 
@@ -197,6 +196,22 @@ function basic_attack(user,target,attack)
 		deal_dmg(target,user,attack.dmg*get_stat(user,"atk"),attack.typ)
 	end
 end
+
+--abilities
+atks ={
+["sword"] = {
+	dmg=0.75,
+	crit=10,
+	rng=2,
+	ap=3,
+	uselos=true,
+	atk=basic_attack,
+	typ=1, --0 = phyiscal, 1=light, 2=dark
+	aoe=nil,
+	trgtd=true,
+	ma=0
+}
+}
 -->8
 --turn logic
 
@@ -218,7 +233,6 @@ function clone(to_copy,val)
 	local cpy={}
 	local i, v = next(to_copy,nil)
 	while i do
-		
 		if(val) then
 			cpy[i]=val
 		else
@@ -274,10 +288,11 @@ function find_path(pos,grid)
 		return returnstk
 end
 
-function check_unit(x,y,ignore)
+function check_unit(x,y,ignore,alive)
+	if(not alive) alive=true
 	for u =1,#units do
 		un=units[u]
-		if(un.x==x and un.y==y and un != ignore) then
+		if(un.x==x and un.y==y and un != ignore and un.alive==alive) then
 			return un
 		end
 	end
@@ -360,21 +375,20 @@ end
 
 -->8
 --rendering
-
 function draw_path(p,range)
 	if(p) then
-	if(#p > 1) then
-	last=cur
-	col=9
-	for i=1,#p do
-		col=9
-		if(range) then
-		if(i <= #p-range)  col=8 
+		if(#p > 1) then
+			last=cur
+			col=9
+			for i=1,#p do
+				col=9
+				if(range) then
+					if(i <= #p-range)  col=8 
+				end
+				line(last.x*8+4,last.y*8+4,p[i].x*8+4,p[i].y*8+4,col)
+				last=p[i]
+			end
 		end
-		line(last.x*8+4,last.y*8+4,p[i].x*8+4,p[i].y*8+4,col)
-		last=p[i]
-	end
-	end
 	end
 end
 
@@ -414,7 +428,8 @@ function draw_menu(m)
 	if(m.op) options(m.op,m.x+m.w/2,m.y+6,m.sl,m.text)  
 end
 
-function draw_range(cx,cy,r,uselos)
+function get_range(cx,cy,r,uselos)
+	valid_tiles={}
 	for x=cx-r,cx+r do
 		for y=cy-r,cy+r do
 			if(in_battle({x=x,y=y})) then
@@ -423,11 +438,15 @@ function draw_range(cx,cy,r,uselos)
 				if((uselos)) then
 					d= los(cx,cy,x,y)
 				end
-				if(d) spr(6,x*8,y*8)
+				if(d) add(valid_tiles,{x=x,y=y})
 			end
 			end
 		end
 	end
+end
+
+function draw_range()
+	foreach(valid_tiles,function(a) spr(6,a.x*8,a.y*8) end)
 end
 -->8
 --ui
@@ -497,6 +516,7 @@ function atk_slct(s)
 		make_menu(32,64,64,16,"not enough ap!")
 		return
 	elseif(atkdata.trgtd) then
+		get_range(act_un.x,act_un.y,atkdata.rng,atkdata.uselos)
 		make_menu(0,0,0,0,nil,nil,target_update,nil,target_draw)
 	end
 	
@@ -526,16 +546,24 @@ end
 
 
 function target_update(m)
-	
-
+	if(btn()) trgt=check_unit(cur.x,cur.y)
+	if(btnp(❎) and trgt and stack_has(valid_tiles,{x=cur.x,y=cur.y})) then
+		atkdata.atk(act_un,trgt,atkdata)
+		act_un.ap-=atkdata.ap
+		del(menus,m)
+	elseif(btnp(🅾️)) then 
+		del(menus,m)
+	end
 end
 
 function target_draw(m)
 	show_stats=false
-	draw_range(act_un.x,act_un.y,atkdata.rng,atkdata.uselos)
-	print("❎ confirm\n🅾️ cancel",camx+60,camy+113)
-
-
+	draw_range()
+	print("❎ confirm\n🅾️ cancel",camx+77,camy+113)
+	if(trgt) then
+		print(trgt.name.."\nhp:"..get_stat(trgt,"hp").."/"..get_stat(trgt,"maxhp"),camx,camy+113)
+		print("def:"..get_stat(trgt,"def"),camx+44,camy+119)
+	end
 end
 __gfx__
 00000000000aa00000088000bbbbbbbb66666666aaaaaaaa88888888000000000000006000000000000000000000000000000000000000000000000000000000
@@ -547,12 +575,12 @@ __gfx__
 0000000000f00f0000600600bbbbbbbb66666666a000000a80000008060000000060000000000000000000000000000000000000000000000000000000000000
 000000000440040000500500bbbbbbbb66666666aaaaaaaa88888888000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000330000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000330000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000004444000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000003943000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000003493000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000330000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000330000008007000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000330000078870000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000004444000887880000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000003943000088788000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000003493000078878800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000330000780000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000003003000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
