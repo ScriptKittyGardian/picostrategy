@@ -48,7 +48,8 @@ function _update()
 		movetimer=0
 		end
 	end
-
+	if(act_un.enemy) act_un.stats.brain(act_un)
+	
 	if(active_men) then
 		active_men.update(active_men)
 	end
@@ -72,22 +73,17 @@ function _draw()
 		foreach(units,draw_unit)
 		if(active_men) active_men.draw(active_men)
 		line(camx,camy+111,camx+128,camy+111,7)
-		if(act_un) then
-			if(not act_un.enemy and show_stats) then
-				print(act_un.name.."\nhp:"
-				..get_stat(act_un,"hp").."/"..get_stat(act_un,"maxhp"), camx,camy+113,7)
-				print("atk:"..get_stat(act_un,"atk")..
-				"\ndef:"..get_stat(act_un,"def"),camx+44,camy+113)
-				print("spd:"..act_un.ap.."/"..get_stat(act_un,"spd")
-				.."\nma:"..get_stat(act_un,"ma").."/"..get_stat(act_un,"maxma"),camx+77,camy+113)
+		if(act_un and show_stats) then
+			if(not act_un.enemy) then
+				draw_stats(act_un,true,true,true)
+			else
+				draw_stats(act_un,true,false,false)
+				print(action_announce,44,113)
 			end
 		end
 		
 	end
 	if(cur) spr(5,cur.x*8,cur.y*8)
-
-
-	
 end
 -->8
 --units
@@ -97,7 +93,7 @@ function standard_death(u)
 	u.k=18
 end
 
-function make_unit(name,k,hp,def,atk,sp,ma,wp,aff)
+function make_unit(name,k,hp,def,atk,sp,ma,wp,aff,brain)
 	st={
 		name=name,
 		k=k,
@@ -114,15 +110,18 @@ function make_unit(name,k,hp,def,atk,sp,ma,wp,aff)
 		enemy=false,
 		move_cost=1,
 		die=standard_death,
-		weapon=wp --0 sword, 1 spear, 2 axe, 3 bow
+		weapon=wp, --0 sword, 1 spear, 2 axe, 3 bow
+		aff=aff,
+		brain=brain
 	}
 	return st
 end
 
 function init_units()
 	anya=make_unit("anya",2,50,10,35,10,15,"sword")
-	goblin=make_unit("goblin",17,12,5,15,4,0,"sword")
+	goblin=make_unit("goblin",17,12,5,15,4,0,"sword",1,default_brain)
 	goblin.enemy=true
+	goblin.spells={"sword"}
 end
 
 
@@ -185,23 +184,25 @@ function move_unit()
 end
 
 function deal_dmg(trgt,atkr,dmg,typ)
-	dmg -= get_stat(trgt,"def") * 2
+	dmg -= get_stat(trgt,"def")/2
 	dmg -= dmg*trgt.stats.res[typ]
 	if(typ==0 and trgt.stats.typ==0) dmg *= 0.75
 	if(typ==1 and trgt.stats.typ==2) dmg *= 0.75
 	if(typ==2 and trgt.stats.typ==1) dmg *= 0.75
+	dmg=max(1,dmg)
 	change_stat(trgt,"hp",-round(dmg))
 end
 
 
 function basic_attack(user,target,attack)
-	if(trgt.stats) then
+	if(target.stats) then
 		deal_dmg(target,user,attack.dmg*get_stat(user,"atk"),attack.typ)
 	end
 end
 
 atks ={
 ["sword"] = {
+	name="sword",
 	dmg=0.75,
 	crit=10,
 	rng=2,
@@ -303,7 +304,7 @@ end
 
 function next_move(p,grid)
 	local p=stack_has(grid,p)
-	if(p == false or p.c==0 or check_unit(p.x,p.y,act_un)) return nil
+	if(p == nil or p.c==0 or check_unit(p.x,p.y,act_un)) return nil
 	local best=p
 	local len = #grid
 	for i=1,len do
@@ -339,11 +340,11 @@ function has_flag(crd,flgs)
 end
 
 function stack_has(st,cd)
-	if(st==nil) stop()
+	if(st==nil) return nil
 	for i=1,#st do
 		if(cd.x==st[i].x and cd.y == st[i].y) return st[i]
 	end
-	return false
+	return nil
 end
 
 function round(n)
@@ -398,9 +399,9 @@ end
 function find_shortest(nav,enemy)
 	local best=nil
 	local bestd=nil
-	for i=1,#actors do
-		local a= actors[i]
-		local cel=find_stack(nav,a)
+	for i=1,#units do
+		local a= units[i]
+		local cel=stack_has(nav,a)
 		if(a.enemy == enemy and cel) then
 			if(cel.c > 0) then
 				if(best) then
@@ -415,7 +416,7 @@ function find_shortest(nav,enemy)
 			end
 		end
 	end
-	return {best,bestd}
+	return best
 end
 -->8
 --rendering
@@ -491,6 +492,12 @@ end
 
 function draw_range()
 	foreach(valid_tiles,function(a) spr(6,a.x*8,a.y*8) end)
+end
+
+function draw_stats(u,namehp,atkdef,spdma) 
+	if(namehp) print(u.name.."\nhp:"..get_stat(u,"hp").."/"..get_stat(u,"maxhp"), camx,camy+113,7)
+	if(atkdef) print("atk:"..get_stat(u,"atk").."\ndef:"..get_stat(u,"def"),camx+44,camy+113)
+	if(spdma) print("spd:"..u.ap.."/"..get_stat(u,"spd").."\nma:"..get_stat(u,"ma").."/"..get_stat(u,"maxma"),camx+77,camy+113)
 end
 -->8
 --ui
@@ -617,20 +624,26 @@ action_announce=""
 
 
 function default_brain(u)
+	if(not u.alive) then 
+		next_turn()
+		return
+	end
 	if(movetimer!=0) then
 		movetimer-=1
 		return
+	else
+		action_announce=""
 	end
 	
 	target=nil
 	
-	for i=1,#u.spells do
-		atkdata=u.spells[i]
+	for i=1,#u.stats.spells do
+		atkdata=atks[u.stats.spells[i]]
 		if(atkdata.ap <= u.ap) then
 			get_range(u.x,u.y,atkdata.rng,atkdata.uselos)
 			for v=1,#valid_tiles do
 				local val=valid_tiles[v]
-				local t=check_unit(val.x,va.y,u)
+				local t=check_unit(val.x,val.y,u)
 				if(t) then
 					if(t.enemy != u.enemy) then
 						target=t
@@ -642,6 +655,27 @@ function default_brain(u)
 		end
 	end
 	
+	if(target) then
+		atkdata.atk(u,target,atkdata)
+		u.ap -= atkdata.ap
+		movetimer=action_time
+		action_announce=u.name.." used "..atkdata.name.." on "..target.name
+		return
+	elseif(u.ap >= u.stats.move_cost) then
+		target=find_shortest(u.nav,not u.enemy)
+		if(target) then
+			tomove=next_move(u,target.nav)
+			if(tomove) then
+				u.x=tomove.x
+				u.y=tomove.y
+				u.ap-=u.stats.move_cost
+				u.nav=navgrid(u.x,u.y,slds)
+				movetimer=movespeed
+				return
+			end
+		end
+	end
+	next_turn()
 	
 end
 __gfx__
