@@ -375,6 +375,48 @@ function los(x1,y1,x2,y2)
 	return seenstk
 end
 
+--closest crow dist
+function find_closest(x,y,enemy)
+	local closest=nil
+	local d=nil
+	for i=1,#actors do
+		local a = actors[i]
+		if(a.enemy==enemy and (a.x != x or a.y != y)) then
+			if(closest) then
+				if(dist(a.x,a.y,x,y) < d) then 
+					closest=a
+				end
+			end
+			else
+				closest=a
+				d=dist(a.x,a.y,x,y)
+		end
+	end
+	return closest
+end
+
+function find_shortest(nav,enemy)
+	local best=nil
+	local bestd=nil
+	for i=1,#actors do
+		local a= actors[i]
+		local cel=find_stack(nav,a)
+		if(a.enemy == enemy and cel) then
+			if(cel.c > 0) then
+				if(best) then
+					if(cel.c < bestd.c) then
+						best=a
+						bestd=cel.c
+					end
+				else
+					best=a
+					bestd=cel.c
+				end
+			end
+		end
+	end
+	return {best,bestd}
+end
 -->8
 --rendering
 function draw_path(p,range)
@@ -566,6 +608,41 @@ function target_draw(m)
 		print(trgt.name.."\nhp:"..get_stat(trgt,"hp").."/"..get_stat(trgt,"maxhp"),camx,camy+113)
 		print("def:"..get_stat(trgt,"def"),camx+44,camy+119)
 	end
+end
+-->8
+--brains
+action_time=60 --how many frames to wait after performing an action
+
+action_announce=""
+
+
+function default_brain(u)
+	if(movetimer!=0) then
+		movetimer-=1
+		return
+	end
+	
+	target=nil
+	
+	for i=1,#u.spells do
+		atkdata=u.spells[i]
+		if(atkdata.ap <= u.ap) then
+			get_range(u.x,u.y,atkdata.rng,atkdata.uselos)
+			for v=1,#valid_tiles do
+				local val=valid_tiles[v]
+				local t=check_unit(val.x,va.y,u)
+				if(t) then
+					if(t.enemy != u.enemy) then
+						target=t
+						break					
+					end 
+				end
+			end
+			if(target) break
+		end
+	end
+	
+	
 end
 __gfx__
 00000000000aa00000088000bbbbbbbb66666666aaaaaaaa88888888000000000000006000000000000000000000000000000000000000000000000000000000
