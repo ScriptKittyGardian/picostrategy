@@ -13,6 +13,7 @@ sx=16,
 sy=14
 }
 
+
 turn=1
 in_battle=true
 cur={x=8,y=8}
@@ -30,8 +31,12 @@ movetimer=0
 function _init()
 	init_units()
 	place_unit(4,1,goblin)
+	place_unit(5,1,goblin)
+	place_unit(6,1,goblin)
+	place_unit(7,1,goblin)
+
 	place_unit(1,1,anya)
-	place_unit(4,2,goblin)
+	place_unit(4,2,rachel)
 	next_turn()
 end
 
@@ -72,6 +77,7 @@ function _draw()
 	if(in_battle) then
 		foreach(units,draw_unit)
 		if(active_men) active_men.draw(active_men)
+		if(cur) spr(5,cur.x*8,cur.y*8)
 		line(camx,camy+111,camx+128,camy+111,7)
 		if(act_un and show_stats) then
 			if(not act_un.enemy) then
@@ -83,8 +89,8 @@ function _draw()
 		end
 		
 	end
-	if(cur) spr(5,cur.x*8,cur.y*8)
 	foreach(effects,draw_effect)
+	print(stat(7),0,0)
 end
 -->8
 --units
@@ -92,7 +98,9 @@ end
 function standard_death(u)
 	u.alive=false
 	u.k=18
+	update_nav()
 end
+
 
 function make_unit(name,k,hp,def,atk,sp,ma,wp,aff,brain)
 	st={
@@ -119,7 +127,9 @@ function make_unit(name,k,hp,def,atk,sp,ma,wp,aff,brain)
 end
 
 function init_units()
-	anya=make_unit("anya",2,50,10,35,10,15,"fireball")
+	anya=make_unit("anya",2,30,5,20,8,25,"fireball",1)
+	rachel=make_unit("rachel",1,40,12,15,8,10,"sword",1)
+
 	goblin=make_unit("goblin",17,12,5,15,4,0,"sword",1,default_brain)
 	goblin.enemy=true
 	goblin.spells={"sword"}
@@ -184,7 +194,8 @@ function move_unit()
 		act_un.ap-=act_un.move_cost
 	else
 		moving=false
-		act_un.nav=navgrid(act_un.x,act_un.y,slds)
+		--act_un.nav=navgrid(act_un.x,act_un.y,slds)
+		update_nav()
 	end
 end
 
@@ -285,7 +296,7 @@ function clone(to_copy,val)
 	return cpy
 end
 
-function navgrid(sx,sy,flgs,tx,ty)
+function navgrid(sx,sy,flgs,mx)
 	stack={{x=sx,y=sy,c=0}}
 	local pos=1
 	local sol = false
@@ -295,8 +306,9 @@ function navgrid(sx,sy,flgs,tx,ty)
 		for x=crd.x-1,crd.x+1 do
 			for y=crd.y-1,crd.y+1 do
 				a={x=x,y=y,c=n}
-				if(not stack_has(stack,a) and in_battle(a) and not has_flag(a,flgs)) then
-							add(stack,a)
+				if(not stack_has(stack,a) and in_battle(a) and not has_flag(a,flgs) and not check_unit(a.x,a.y)) then
+
+							if(not mx or n < mx) add(stack,a)
 					end
 				end
 		end
@@ -315,11 +327,11 @@ end
 function find_path(pos,grid)
 		local returnstk={}
 		pos=stack_has(grid,pos)
-
 		while pos do
 			add(returnstk,pos)
 			pos=next_move(pos,grid)
 		end
+		
 		if(#returnstk > 0) then 
 			if(returnstk[#returnstk].c == 0) then
 				return returnstk
@@ -341,21 +353,42 @@ function check_unit(x,y,ignore,alive)
 	return nil
 end
 
+function update_nav()
+	foreach(units,function(u) 
+		if(u.alive) u.nav=navgrid(u.x,u.y,slds,get_stat(u,"spd"))
+	end)
+end
+
 function next_move(p,grid)
 	local p=stack_has(grid,p)
-	if(p == nil or p.c==0 or check_unit(p.x,p.y,act_un)) return nil
+	if(p==nil or p.c==0 or check_unit(p.x,p.y,act_un)) return nil
 	local best=p
 	local len = #grid
 	for i=1,len do
 		cel= grid[i]
 		d=dist(p,cel)
-		if(d < 2 and cel.c <= best.c and not check_unit(cel.x,cel.y,act_un)) then
+		if(d < 2 and cel.c <= best.c) then
 			if(d < dist(p,best) or best == p) best=cel
 		end
 	end
 	if(best==p) return nil
 	return best
 end
+
+function adjacent(x,y,nav)
+	local b=nil
+	for xx=x-1,x+1 do
+		for yy=y-1,y+1 do
+			local crd={x=xx,y=yy}
+			local c = stack_has(nav,crd)
+			if(in_battle(crd) and not check_unit(xx,yy) and c) then
+				if(b == nil or c.c < b.c) b=c
+			end
+		end
+	end
+	return b
+end
+
 
 function in_battle(coord)
 	if(coord.x >= 0 and coord.x < bfield.sx) then
@@ -411,7 +444,6 @@ function los(x1,y1,x2,y2)
 		y1+=yinc
 		x1+=xinc
 	end
-	
 	return seenstk
 end
 
@@ -440,11 +472,12 @@ function find_shortest(nav,enemy)
 	local bestd=nil
 	for i=1,#units do
 		local a= units[i]
-		local cel=stack_has(nav,a)
+		local cel=adjacent(a.x,a.y,nav)
+
 		if(a.enemy == enemy and cel) then
 			if(cel.c > 0) then
 				if(best) then
-					if(cel.c < bestd.c) then
+					if(cel.c < bestd) then
 						best=a
 						bestd=cel.c
 					end
@@ -682,7 +715,10 @@ action_time=60 --how many frames to wait after performing an action
 action_announce=""
 
 
+
 function default_brain(u)
+	if(moving) return
+
 	if(not u.alive) then 
 		next_turn()
 		return
@@ -722,15 +758,15 @@ function default_brain(u)
 		return
 	elseif(u.ap >= u.stats.move_cost) then
 		target=find_shortest(u.nav,not u.enemy)
-		if(target) then
-			tomove=next_move(u,target.nav)
-			if(tomove) then
-				u.x=tomove.x
-				u.y=tomove.y
-				u.ap-=u.stats.move_cost
-				u.nav=navgrid(u.x,u.y,slds)
-				movetimer=movespeed
-				return
+		if(target and not moving) then	
+			if(dist(u,target) > 2) then		
+				dest=adjacent(target.x,target.y,u.nav)
+				path=find_path(dest,u.nav)
+				draw_path(path)
+				if(#path > 1) then
+					moving=true
+					return
+				end
 			end
 		end
 	end
