@@ -30,11 +30,7 @@ movetimer=0
 
 function _init()
 	init_units()
-	place_unit(4,1,goblin)
-	place_unit(5,1,goblin)
-	place_unit(6,1,goblin)
-	place_unit(7,1,goblin)
-
+	place_unit(1,2,goblin)
 	place_unit(1,1,anya)
 	place_unit(4,2,rachel)
 	next_turn()
@@ -276,7 +272,7 @@ function next_turn()
 	act_un=units[turn]
 	act_un.ap=get_stat(act_un,"spd")
 	if(not act_un.enemy) then
-		make_menu(2,77,24,32,nil,{"move","attack","guard","rest"},nil,b_menu,nil,true)
+		make_menu(2,68,26,41,nil,{"inspect","move","attack","guard","rest"},nil,b_menu,nil,true)
 		cur={x=act_un.x,y=act_un.y}
 	end
 end
@@ -343,7 +339,7 @@ function find_path(pos,grid)
 end
 
 function check_unit(x,y,ignore,alive)
-	if(not alive) alive=true
+	if(alive == nil) alive=true
 	for u =1,#units do
 		un=units[u]
 		if(un.x==x and un.y==y and un != ignore and un.alive==alive) then
@@ -494,9 +490,22 @@ end
 function pack_string(s,l)
 	if(#s < l) return s
 	local r=""
-	for i =1,#s,l do
-		r = r .. sub(s,i,i+l) .. "\n"
+	local seg=1
+	local i = 1
+	while(i < #s) do
+	
+		if(ord(s,i) == 32) then
+			if(seg >= l)	then 
+			r = r .. sub(s,i-seg-1,i-1) .. "\n"
+				seg=1
+			end
+		else
+			seg+=1
+		end
+		i+=1
+
 	end
+	r = r .. sub(s,i-seg,i) .. "\n"
 	return r
 end
 
@@ -557,7 +566,26 @@ function draw_unit(u)
 end
 
 function print_just(t,x,y,c)
-	print(t,x-(#t*2),y-4,c)
+	longest_seg=0
+	local i = 1
+	local seg = 1
+	local segs=1
+	
+	
+	while i < #t+1 do
+		if(ord(t,i) == 10) then
+			longest_seg=max(seg,longest_seg)
+			seg=0
+			segs+=1
+		else
+			if(ord(t,i) < 128) seg += 1.75
+			if(ord(t,i) >= 128) seg += 4
+		end
+		i+=1
+	end
+	longest_seg=max(seg,longest_seg)
+
+	print(t,x-flr(longest_seg),y-(segs*3),c)
 end
 
 function draw_menu(m)
@@ -567,7 +595,7 @@ function draw_menu(m)
 	rect(camx+m.x-2,camy+m.y-2,
 	camx+m.x+m.w+2,
 	camy+m.y+m.h+2,7)
-	if(m.text and not m.op) print_just(m.text,m.x+m.w/2,m.y+m.h/2,7)
+	if(m.text and not m.op) print_just(m.text,camx + m.x+m.w/2,camy + m.y+m.h/2,7)
 	if(m.op) options(m.op,m.x+m.w/2,m.y+6,m.sl,m.text)  
 end
 
@@ -582,7 +610,9 @@ function draw_range()
 end
 
 function draw_stats(u,namehp,atkdef,spdma) 
-	if(namehp) print(u.name.."\nhp:"..get_stat(u,"hp").."/"..get_stat(u,"maxhp"), camx,camy+113,7)
+	local namecol=7
+	if(u.enemy) namecol=8
+	if(namehp) print(u.name.."\nhp:"..get_stat(u,"hp").."/"..get_stat(u,"maxhp"), camx,camy+113,namecol)
 	if(atkdef) print("atk:"..get_stat(u,"atk").."\ndef:"..get_stat(u,"def"),camx+44,camy+113)
 	if(spdma) print("spd:"..u.ap.."/"..get_stat(u,"spd").."\nma:"..get_stat(u,"ma").."/"..get_stat(u,"maxma"),camx+77,camy+113)
 end
@@ -627,12 +657,14 @@ function sel_menu(m)
 end
 
 function b_menu(s)
-	if(s==1) then --move selection
+	if(s==1) then
+		make_menu(0,0,0,0,nil,nil,inspect_update,nil,inspect_draw)
+	elseif(s==2) then --move selection
 		make_menu(-4,-4,0,0,nil,nil,move_menu,nil,mm_draw)
-	elseif(s==2) then -- attack menu
+	elseif(s==3) then -- attack menu
 		make_menu(2,77,64,32,nil,{act_un.weapon.."("..atks[act_un.weapon].ap..")"},nil,atk_slct)
-	elseif(s==3) then -- guard menu
-	elseif(s==4) then -- rest
+	elseif(s==4) then -- guard menu
+	elseif(s==5) then -- rest
 		next_turn()
 	end
 	
@@ -704,8 +736,34 @@ function target_draw(m)
 	print("❎ confirm\n🅾️ cancel",camx+77,camy+113)
 	if(trgt) then
 		draw_stats(trgt,true)
-	 --print(trgt.name.."\nhp:"..get_stat(trgt,"hp").."/"..get_stat(trgt,"maxhp"),camx,camy+113)
-		--print("def:"..get_stat(trgt,"def"),camx+44,camy+119)
+	end
+end
+
+function inspect_update(m)
+	trgt=check_unit(cur.x,cur.y)
+	tile=mget(cur.x,cur.y)
+	corpse=check_unit(cur.x,cur.y,nil,false)
+	if(btnp(❎) and trgt) make_menu(22,22,84,84,"",nil,nil,nil,inspect_target)
+	if(btnp(🅾️)) del(menus,m)
+end
+
+function inspect_target(m)
+	draw_menu(m)
+	sspr((trgt.k%16)*8,flr(trgt.k/16)*8,8,8,m.x+m.w*0.1,m.y+m.h*0.1,16,16)
+	
+	print_just(creatures[trgt.name],m.x+m.w/2,m.y+m.h*0.75,7)
+
+end
+
+function inspect_draw(m)
+	show_stats=false
+	if(trgt) then
+		draw_stats(trgt,true,true,true)
+	elseif(corpse) then
+		print(corpse.name.." corpse",camx,camy+113)	
+	else
+		print(tiles[tile],camx,camy+113)
+		if(has_flag(cur,slds)) print("solid",camx,camy+121,8)
 	end
 end
 -->8
@@ -773,6 +831,20 @@ function default_brain(u)
 	next_turn()
 	
 end
+-->8
+--descriptions
+
+
+tiles={
+	[3] = "grass",
+	[4] = "wall"
+}
+
+creatures={
+	["goblin"] = "a foul creature\nof the wastes\ndo not come between\nthem and treasure.",
+	["anya"] = "archmage\nanya volkovia\nskilled in\nthe deployment\nof fire magics.",
+	["rachel"] = "rachel llyadwell\nblademaster of\nthe forest\nkingdom of campton."
+}
 __gfx__
 00000000000aa00000088000bbbbbbbb66666666aaaaaaaa88888888000000000000001000000000000000000000000000000000000000000000000000000000
 0000000000affa000088f800bbbbbbbb66666666a000000a80000008000000000000611000000660000000000000000000000000000000000000000000000000
