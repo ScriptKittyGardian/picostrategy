@@ -33,6 +33,7 @@ function _init()
 	place_unit(1,2,goblin)
 	place_unit(1,1,anya)
 	place_unit(4,2,rachel)
+	update_nav()
 	next_turn()
 end
 
@@ -72,8 +73,8 @@ function _draw()
 	
 	if(in_battle) then
 		foreach(units,draw_unit)
-		if(active_men) active_men.draw(active_men)
 		if(cur) spr(5,cur.x*8,cur.y*8)
+		if(active_men) active_men.draw(active_men)
 		line(camx,camy+111,camx+128,camy+111,7)
 		if(act_un and show_stats) then
 			if(not act_un.enemy) then
@@ -140,13 +141,13 @@ function place_unit(x,y,stats)
 		name=stats.name,
 		stats=clone(stats),
 		modifiers=clone(stats,1),
-		buffs={},
 		weapon=stats.weapon,
 		enemy=stats.enemy,
 		alive=true,
 		nav=navgrid(x,y,slds),
 		ap=0,
-		move_cost=stats.move_cost
+		move_cost=stats.move_cost,
+		status={}
 	}
 	add(units,unit)
 end
@@ -208,13 +209,12 @@ end
 
 function basic_attack(user,coord,attack,aoeslave)
 	if(not aoeslave and attack.aoe) then
-		get_range(coord.x,coord.y,attack.aoe,attack.aoelos)
+		valid_tiles=get_range(coord.x,coord.y,attack.aoe,attack.aoelos)
 			for v = 1,#valid_tiles do
 				basic_attack(user,valid_tiles[v],attack,true)
 			end
 		return
 	end
-	
 	target=check_unit(coord.x,coord.y)
 	if(target) then
 		if(target.stats) then
@@ -222,9 +222,6 @@ function basic_attack(user,coord,attack,aoeslave)
 		end
 	end
 	create_atkeff(coord.x,coord.y,attack.eff)
-	
-
-	
 end
 
 
@@ -234,7 +231,7 @@ atks ={
 	name="sword",
 	dmg=0.45,
 	crit=10,
-	rng=2,
+	rng=1.5,
 	ap=3,
 	uselos=true,
 	atk=basic_attack,
@@ -248,12 +245,12 @@ atks ={
 	name="fireball",
 	dmg=0.5,
 	crit=5,
-	rng=5,
+	rng=3.5,
 	ap=5,
 	uselos=true,
 	atk=basic_attack,
 	typ=2,
-	aoe=2,
+	aoe=1.5,
 	trgtd=true,
 	ma=5,
 	aoelos=true,
@@ -304,7 +301,7 @@ function navgrid(sx,sy,flgs,mx)
 				a={x=x,y=y,c=n}
 				if(not stack_has(stack,a) and in_battle(a) and not has_flag(a,flgs) and not check_unit(a.x,a.y)) then
 
-							if(not mx or n < mx) add(stack,a)
+							if(not mx or n <= mx) add(stack,a)
 					end
 				end
 		end
@@ -490,40 +487,32 @@ end
 function pack_string(s,l)
 	if(#s < l) return s
 	local r=""
-	local seg=1
-	local i = 1
-	while(i < #s) do
-	
-		if(ord(s,i) == 32) then
-			if(seg >= l)	then 
-			r = r .. sub(s,i-seg-1,i-1) .. "\n"
-				seg=1
-			end
-		else
-			seg+=1
-		end
-		i+=1
-
+	for i=l,#s+l,l do
+		r = r .. sub(s,i-l+1,i) .. "\n"
 	end
-	r = r .. sub(s,i-seg,i) .. "\n"
 	return r
 end
 
 function get_range(cx,cy,r,uselos)
-	valid_tiles={}
-	for x=cx-r,cx+r do
-		for y=cy-r,cy+r do
+	local tor={}
+	intr=round(r)
+
+	for x=cx-intr,cx+intr do
+		for y=cy-intr,cy+intr do
 			if(in_battle({x=x,y=y})) then
-			if(dist({x=cx,y=cy},{x=x,y=y}) < r) then
-				d=true
-				if((uselos)) then
-					d= los(cx,cy,x,y)
+				if(dist({x=cx,y=cy},{x=x,y=y}) <= r) then
+					d=true
+						if((uselos)) then
+							d = los(cx,cy,x,y)
+						end
+					if(d) add(tor,{x=x,y=y})
 				end
-				if(d) add(valid_tiles,{x=x,y=y})
 			end
-			end
+			
+			
 		end
 	end
+	return tor
 end
 -->8
 --rendering
@@ -546,7 +535,7 @@ end
 
 
 function options(opt,x,y,sl,txt)
-	offset=0
+	local offset=0
 	if(txt)then
 	 print_just(txt,x,y,7) 
 		offset=1
@@ -605,8 +594,10 @@ function draw_effect(e)
 	if(fget(flr(e.k)-1,1)) del(effects,e)
 end
 
-function draw_range()
-	foreach(valid_tiles,function(a) spr(6,a.x*8,a.y*8) end)
+function draw_range(r,s)
+	foreach(r,function(a) 
+		if(a.x != cur.x or a.y != cur.y) then
+	 spr(s,a.x*8,a.y*8) end end)
 end
 
 function draw_stats(u,namehp,atkdef,spdma) 
@@ -689,7 +680,7 @@ function atk_slct(s)
 		make_menu(32,64,64,16,"not enough mana!")
 		return
 	elseif(atkdata.trgtd) then
-		get_range(act_un.x,act_un.y,atkdata.rng,atkdata.uselos)
+		valid_tiles=get_range(act_un.x,act_un.y,atkdata.rng,atkdata.uselos)
 		make_menu(0,0,0,0,nil,nil,target_update,nil,target_draw)
 	end
 	
@@ -720,23 +711,31 @@ end
 
 function target_update(m)
 	if(btn()) trgt=check_unit(cur.x,cur.y)
-	if(btnp(❎) and stack_has(valid_tiles,{x=cur.x,y=cur.y})) then
-		atkdata.atk(act_un,cur,atkdata)
-		act_un.ap-=atkdata.ap
-		change_stat(act_un,"ma",-atkdata.ma)
+	aoe_tiles=nil
+	if(btnp(🅾️)) then 
 		del(menus,m)
-	elseif(btnp(🅾️)) then 
-		del(menus,m)
+		return
+	end
+	if(stack_has(valid_tiles,cur)) then
+			if(atkdata.aoe) aoe_tiles=get_range(cur.x,cur.y,atkdata.aoe,true)
+			if(btnp(❎) ) then
+				atkdata.atk(act_un,cur,atkdata)
+				act_un.ap-=atkdata.ap
+				change_stat(act_un,"ma",-atkdata.ma)
+				del(menus,m)
+
+	end
 	end
 end
 
 function target_draw(m)
 	show_stats=false
-	draw_range()
+	draw_range(valid_tiles,6)
 	print("❎ confirm\n🅾️ cancel",camx+77,camy+113)
 	if(trgt) then
 		draw_stats(trgt,true)
 	end
+	if(aoe_tiles) draw_range(aoe_tiles,10)
 end
 
 function inspect_update(m)
@@ -750,6 +749,7 @@ end
 function inspect_target(m)
 	draw_menu(m)
 	sspr((trgt.k%16)*8,flr(trgt.k/16)*8,8,8,m.x+m.w*0.1,m.y+m.h*0.1,16,16)
+	print_just(trgt.name,m.x+m.w*0.5,m.y+m.h*0.1,7)
 	
 	print_just(creatures[trgt.name],m.x+m.w/2,m.y+m.h*0.75,7)
 
@@ -760,7 +760,7 @@ function inspect_draw(m)
 	if(trgt) then
 		draw_stats(trgt,true,true,true)
 	elseif(corpse) then
-		print(corpse.name.." corpse",camx,camy+113)	
+		print(corpse.name.." corpse",camx,camy+113)
 	else
 		print(tiles[tile],camx,camy+113)
 		if(has_flag(cur,slds)) print("solid",camx,camy+121,8)
@@ -793,7 +793,7 @@ function default_brain(u)
 	for i=1,#u.stats.spells do
 		atkdata=atks[u.stats.spells[i]]
 		if(atkdata.ap <= u.ap) then
-			get_range(u.x,u.y,atkdata.rng,atkdata.uselos)
+			valid_tiles = get_range(u.x,u.y,atkdata.rng,atkdata.uselos)
 			for v=1,#valid_tiles do
 				local val=valid_tiles[v]
 				local t=check_unit(val.x,val.y,u)
@@ -846,14 +846,14 @@ creatures={
 	["rachel"] = "rachel llyadwell\nblademaster of\nthe forest\nkingdom of campton."
 }
 __gfx__
-00000000000aa00000088000bbbbbbbb66666666aaaaaaaa88888888000000000000001000000000000000000000000000000000000000000000000000000000
-0000000000affa000088f800bbbbbbbb66666666a000000a80000008000000000000611000000660000000000000000000000000000000000000000000000000
-00700700000ffa00008ff800bbbbbbbb66666666a000000a80000008000000000006610000006600000000000000000000000000000000000000000000000000
-00077000004444a008666680bbbbbbbb66666666a000000a80000008000100000066100000001000000000000000000000000000000000000000000000000000
-0007700000f55fa008f11f80bbbbbbbb66666666a000000a80000008001100000061000000000000000000000000000000000000000000000000000000000000
-007007000004400000055000bbbbbbbb66666666a000000a80000008011000000010000000000000000000000000000000000000000000000000000000000000
-0000000000f00f0000600600bbbbbbbb66666666a000000a80000008010000000010000000000000000000000000000000000000000000000000000000000000
-000000000440040000500500bbbbbbbb66666666aaaaaaaa88888888000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000aa00000088000bbbbbbbb66666666aaaaaaaa88888888000000000000001000000000555555550000000000000000000000000000000000000000
+0000000000affa000088f800bbbbbbbb66666666a000000a80000008000000000000611000000660500000050000000000000000000000000000000000000000
+00700700000ffa00008ff800bbbbbbbb66666666a000000a80000008000000000006610000006600500000050000000000000000000000000000000000000000
+00077000004444a008666680bbbbbbbb66666666a000000a80000008000100000066100000001000500000050000000000000000000000000000000000000000
+0007700000f55fa008f11f80bbbbbbbb66666666a000000a80000008001100000061000000000000500000050000000000000000000000000000000000000000
+007007000004400000055000bbbbbbbb66666666a000000a80000008011000000010000000000000500000050000000000000000000000000000000000000000
+0000000000f00f0000600600bbbbbbbb66666666a000000a80000008010000000010000000000000500000050000000000000000000000000000000000000000
+000000000440040000500500bbbbbbbb66666666aaaaaaaa88888888000000000000000000000000555555550000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000099990000999900000000000000000000000000000000000000000000000000
 00000000000330000008007000000000000000000000000000000000000000000097790009777790000000000000000000000000000000000000000000000000
 00000000000330000078870000000000000000000000000000000000000990000978889097888879000000000000000000000000000000000000000000000000
