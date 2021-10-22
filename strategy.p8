@@ -32,7 +32,7 @@ function _init()
 	init_units()
 	add_member(rachel)
 	add_member(anya)
-	begin_encounter({slime,slime},forest)
+	begin_encounter({slime,slime,goblin,goblin},forest)
 end
 
 
