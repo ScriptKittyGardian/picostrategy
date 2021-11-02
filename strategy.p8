@@ -25,6 +25,7 @@ function _init()
 	add_member(rachel)
 	add_member(anya)
 	init_map()
+	gold=0
 	game_state="campaign"
 	--begin_encounter({slime,slime,goblin,goblin},forest)
 end
@@ -37,7 +38,7 @@ function _update()
 	if(game_state=="campaign") campaign()
 	active_men=menus[#menus]
 	if(active_men) active_men.update(active_men)
-	if(cur and not focus) then
+	if(showcur and not focus) then
 		if(btnp(⬆️)) cur.y-=1
 		if(btnp(⬇️)) cur.y+=1
 		if(btnp(⬅️)) cur.x-=1
@@ -58,13 +59,9 @@ function _draw()
 		foreach(units,draw_corpse)
 		foreach(units,draw_unit)
 		end
-	if(active_men) active_men.draw(active_men)
 
 	if(game_state=="battle" ) then
 		line(camx,camy+111,camx+128,camy+111,7)
-
-
-
 		if(act_un and show_stats) then
 			if(not act_un.enemy) then
 				draw_stats(act_un,true,true,true,true)
@@ -74,7 +71,6 @@ function _draw()
 			end
 		end
 	elseif(game_state == "placement") then
-
 			print("placement",camx,camy+113,8)
 			for i = 1,3 do 
 				if(i < #unplaced) then
@@ -98,14 +94,24 @@ function _draw()
 		spr(61,camx+40,camy+57)
 		print(goldreward,camx+50,camy+50)
 		print(xpreward,camx+50,camy+59)
+		for i = 1,#lvlups do
+			local p = lvlups[i]
+			spr(p.k,camx+40,camy+58+(8*i))
+			print("⬆️ lvl " .. p.lvl,camx+50,camy+58+(8*i),11)
+
+		end
 		if(btnp(❎)) game_state = "campaign"
+	
+	
+	
 	elseif(game_state=="campaign") then
 
 		draw_map()
 
 	end
-	if(cur) spr(5,cur.x*8,cur.y*8)
+	if(showcur) spr(5,cur.x*8,cur.y*8)
 
+	if(active_men) active_men.draw(active_men)
 
 	foreach(effects,draw_effect)
 	--print(stat(7),0,0)
@@ -130,6 +136,7 @@ function make_unit(name,k,class,tal,aff,lvl,brain,enemy)
 		k=k,
 		res={0,0,0},
 		typ=aff,
+		class=class,
 		corpse=18,
 		spells={tal},
 		enemy=enemy,
@@ -140,7 +147,8 @@ function make_unit(name,k,class,tal,aff,lvl,brain,enemy)
 		alive=true,
 		ap=0,
 		nav={},
-		modifiers={}
+		modifiers={},
+		xp=0
 	}
 	
 	copy_stats(st,class,lvl)
@@ -170,7 +178,7 @@ end
 
 
 function init_units()
-	anya=make_unit("anya",2,"mage","thunder",2,2)
+	anya=make_unit("anya",2,"mage","thunder",2,1)
 	select_spells(anya,2)
 	rachel=make_unit("rachel",1,"fighter","sword",1,1)
 	select_spells(rachel,2)
@@ -243,7 +251,7 @@ function deal_dmg(trgt,atkr,dmg,typ)
 	if(typ==3 and trgt.typ==1) dmg *= 0.75
 	dmg=round(max(1,dmg))
 	field_text(trgt.x,trgt.y-0.5,""..dmg,8)
-	if(dmg > 0 and rnd(1) < 0.5) cleanse_buff(trgt,"sleep")
+	if(dmg > 1 and rnd(1) < 0.5) cleanse_buff(trgt,"sleep")
 	trgt.hp -= dmg
 	if(trgt.hp <= 0) trgt.die(trgt)
 end
@@ -914,6 +922,8 @@ function atk_slct(s)
 end
 
 function move_menu(m)
+	show_stats=false
+
 	if(moved and not moving) del(menus,m)
 	if(not moving and path_regen()) path=find_path(cur,act_un.nav)
 	if(btnp(❎) and #path > 1) then 
@@ -926,7 +936,6 @@ end
 function mm_draw(m)
 	local r = act_un.ap/act_un.move_cost
 	draw_path(path,r)
-	show_stats=false
 	print(act_un.name,camx,camy+113,7)
 	if(not moving) print("❎ confirm\n🅾️ cancel",camx+60,camy+113)
 	consumption= max((#path-1)*act_un.move_cost,0)
@@ -943,6 +952,7 @@ end
 function target_update(m)
 	if(#effects == 0 and fired) del(menus,m)
 	if(btn()) trgt=check_unit(cur.x,cur.y)
+	show_stats=false
 	aoe_tiles=nil
 	if(btnp(🅾️)) then 
 		del(menus,m)
@@ -960,7 +970,6 @@ function target_update(m)
 end
 
 function target_draw(m)
-	show_stats=false
 	if(fired) return
 	draw_range(valid_tiles,6)
  print("❎ confirm\n🅾️ cancel",camx+77,camy+113)
@@ -973,6 +982,7 @@ end
 function inspect_update(m)
 	trgt=check_unit(cur.x,cur.y)
 	tile=mget(cur.x,cur.y)
+	show_stats=false
 	corpse=check_unit(cur.x,cur.y,nil,false)
 	if(btnp(❎) and trgt) make_menu(22,22,84,84,"",nil,nil,nil,inspect_target)
 	if(btnp(🅾️)) del(menus,m)
@@ -988,7 +998,6 @@ function inspect_target(m)
 end
 
 function inspect_draw(m)
-	show_stats=false
 	if(trgt) then
 		draw_stats(trgt,true,true,true)
 	elseif(corpse) then
@@ -998,6 +1007,8 @@ function inspect_draw(m)
 		if(has_flag(cur,slds)) print("solid",camx,camy+121,8)
 	end
 end
+
+
 
 -->8
 --brains
@@ -1203,12 +1214,13 @@ party={}
 
 function add_member(unit)
 	add(party,unit) 
+	party=sort_party(party)
 end
 
 
 function sort_party(party)
 	local r = true
-	if(#party < 2) return
+	if(#party < 2) return party
 	while r do
 		r = false
 		for i = 2,#party do
@@ -1224,11 +1236,6 @@ function sort_party(party)
 end
 -->8
 --encounters
-
-
-
-
-
 function generate_battlefield(w,h,env)
 	bfield = {sx=w,sy=h}
 	fstart = w/4
@@ -1253,6 +1260,7 @@ function begin_encounter(encounter,environment)
 	game_state="placement"
 	unplaced = {}
 	units={}
+	menus={}
 	
 	for i = 1,#party do
 		add(unplaced,party[i])
@@ -1273,6 +1281,8 @@ end
 function get_encounter(tile)
 	e={}
 	weight_sum=0
+	if(rnd(100) > danger[tile]) return nil
+	
 	for i=1,#encounters do
 		b=encounters[i]
 		if(find_i(b.tiles,tile)) add(e,b) weight_sum+= b.weight
@@ -1300,11 +1310,30 @@ encounters = {
 		num=4, --how many total opponents +- n/2
 		name="a band of goblins", --preceded by "you have encoutnered"
 		icon=12, --icon on the map after retreat
-		weight=50
+		weight=25,
+		escape=4
+	},
+		{
+		tiles={3},
+		crowd={"slime"}, --crowd enemies
+		num=6, --how many total opponents +- n/2
+		name="a sludge of slimes", --preceded by "you have encoutnered"
+		icon=12, --icon on the map after retreat
+		weight=50,
+		escape=1
 	}
 }
 -->8
 --environment
+
+danger={
+	[3]  = 65,
+	[67] = 25,
+	[84] = 25,
+	[85] = 25,
+	[83] = 0
+}
+
 
 forest={
 	ground={3,46,46},
@@ -1327,13 +1356,25 @@ function battle()
 		menus={}
 		goldreward=0
 		xpreward=0
+		lvlups={}
 		for t = 1,#units do
 			if(units[t].enemy)then 
 			 goldreward += max(50,25*units[t].lvl)
-				xpreward += max(10,30*units[t].lvl)
+				xpreward += max(50,30*units[t].lvl)
 			end
 		end
+		gold += goldreward
+		foreach(party,function(p) 
+			p.xp += xpreward
+			while(p.xp > 50) do
+				p.xp -= 50
+				p.lvl+=1
+				copy_stats(p,p.class,p.lvl)
+				if(not find_i(lvlups,p)) add(lvlups,p)
+			end
+		end)
 		return
+
 	end
 	if(not act_un) then
 		turn=0
@@ -1354,7 +1395,9 @@ function battle()
 end
 
 function placement() 
+	showcur=true
 	focus=false
+
 	placevalid = (cur.x <= fstart and not has_flag(cur,slds) and not check_unit(cur.x,cur.y))
 	placing=unplaced[1]
 	if(placing.enemy) then
@@ -1382,21 +1425,40 @@ end
 function campaign()
 	nx=0
 	ny=0
+	showcur=false
 	if(btnp(⬅️)) nx=-1 ny=0 
 	if(btnp(➡️)) nx=1 ny = 0
 	if(btnp(⬆️)) ny=-1 nx=0
 	if(btnp(⬇️)) ny=1 nx = 0
-	if(ny+nx != 0) then
+	if(ny+nx != 0 and encounter == nil) then
 		local s=cmap[partyx+nx][partyy+ny]
 		if(not fget(s,0)) then
 			partyx+=nx
 			partyy+=ny
-			i=get_encounter(s)
-			begin_encounter(i,forest)
+			armypos+=armyspeed
+
+			encounter=get_encounter(s)
+			if(encounter) make_menu(42,100,44,24,"what do?",{"fight","run"},nil,sel_enc)
+			--begin_encounter(i,forest)
 		end 
 	end
-	
 end
+
+function sel_enc(n)
+	if(n == 1) then 
+		begin_encounter(encounter,forest)
+		encounter=nil
+	elseif(n == 2) then
+		if(rnd(get_stat(party[#party],"spd")) > encounter.escape) then
+			encounter=nil
+			menus={}
+		else
+			make_menu(42,100,44,24,"caught!",{"fight"},nil,sel_enc)
+		end
+
+	end
+end
+
 -->8
 --campaign map
 
@@ -1492,7 +1554,6 @@ function draw_map()
 	if(mapeffects > 30) then
 		mapeffects=1
 		update_shadow()
-		armypos+=armyspeed
 	end
 	for x = flr(armypos),mapw do
 		for y = 1,maph do
@@ -1503,6 +1564,12 @@ function draw_map()
 	end
 	rectfill(0,0,flr(armypos)*8-8,maph*8,1)
 	spr(party[1].k,partyx*8-8,partyy*8-8)
+
+	if(encounter) then
+		rectfill(0,54,128,76,0)
+		print_just(encounter.name,64,70,7)
+		print_just("spotted!",64,60,8)
+	end
 end
 
 
