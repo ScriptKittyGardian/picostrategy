@@ -23,7 +23,7 @@ movetimer=0
 function _init()
 	init_units()
 	add_member(rachel)
-	add_member(anya)
+	add_member(priest)
 	init_map()
 	gold=0
 	game_state="campaign"
@@ -78,8 +78,8 @@ function _draw()
 				end
 			end
 			
-			for x = 0,bfield.sx do
-				for y = 0,bfield.sy do
+			for x = 0,bfield.sx-1 do
+				for y = 0,bfield.sy-1 do
 					col=nil
 					if(x <= fstart) col=7
 					if(x >= estart) col=8
@@ -122,6 +122,7 @@ end
 function standard_death(u)
 	u.alive=false
 	u.buffs={}
+	del(party,u)
 	update_nav()
 end
 
@@ -178,14 +179,18 @@ end
 
 
 function init_units()
-	anya=make_unit("anya",2,"mage","thunder",2,1)
+	anya=make_unit("anya",2,"mage","thunder",3,1)
 	select_spells(anya,2)
 	rachel=make_unit("rachel",1,"fighter","sword",1,1)
 	select_spells(rachel,2)
-
+	priest=make_unit("father",31,"mage","heal",2,1)
+	select_spells(priest,2)
+	bowman=make_unit("jeff",1,"fighter","bow",1,1)
 	monsters={
 		["slime"]=make_unit("slime",21,"fighter","squish",1,-3,default_brain,true),
-		["goblin"] = 	make_unit("goblin",17,"fighter","sword",1,-3,default_brain,true)
+		["goblin"] =	make_unit("goblin",17,"fighter","sword",1,-1,default_brain,true),
+		["wolf"] =	make_unit("wolf",11,"fighter","bite",1,-3,default_brain,true),
+		["troll"] = make_unit("troll",12,"tank","hammer",1,1,default_brain,true),
 	}
 end
 
@@ -244,11 +249,8 @@ function move_unit()
 end
 
 function deal_dmg(trgt,atkr,dmg,typ)
-	dmg -= get_stat(trgt,"def")/2
+	dmg -= get_stat(trgt,"def")/4
 	dmg -= dmg*trgt.res[typ]
-	if(typ==1 and trgt.typ==2) dmg *= 0.75
-	if(typ==2 and trgt.typ==3) dmg *= 0.75
-	if(typ==3 and trgt.typ==1) dmg *= 0.75
 	dmg=round(max(1,dmg))
 	field_text(trgt.x,trgt.y-0.5,""..dmg,8)
 	if(dmg > 1 and rnd(1) < 0.5) cleanse_buff(trgt,"sleep")
@@ -271,8 +273,13 @@ function basic_attack(user,coord,attack,aoeslave)
 			for b,v in pairs(attack.buffs) do
 				apply_buff(target,b,v)
 			end
-		deal_dmg(target,user,attack.dmg*get_stat(user,"atk"),attack.typ)
+		if(attack.dmg > 0) deal_dmg(target,user,attack.dmg*get_stat(user,"atk"),attack.typ)
+		if(attack.dmg < 0) heal(target,attack.dmg*get_stat(user,"maxhp"))
 	end
+end
+
+function heal(target,amount)
+	target.hp = mid(0,round(target.hp-amount),get_stat(target,"maxhp"))
 end
 
 function teleport(user,coord,attack)
@@ -304,7 +311,8 @@ charspells = {
 "rift",
 "thunder",
 "hammer",
-"bow"}
+"bow",
+"heal"}
 
 atks ={
 ["sword"] = {
@@ -334,9 +342,9 @@ atks ={
 },
 ["hammer"] = {
 	name="hammer",
-	dmg=1,
+	dmg=0.75,
 	rng=2,
-	ap=5,
+	ap=4,
 	uselos=true, 
 	atk=basic_attack,
 	typ=1, --1 = phyiscal, 2=light, 3=dark
@@ -398,6 +406,20 @@ atks ={
 	trgtd=true,
 	ma=2, --light
 	buffs={["sleep"]=3},
+	aoelos=true,
+	eff=54
+},
+["heal"] = {
+	name="heal",
+	dmg=-0.25,
+	rng=3.5,
+	ap=3,
+	uselos=true,
+	atk=basic_attack,
+	typ=2,
+	aoe=1.5,
+	trgtd=true,
+	ma=2,
 	aoelos=true,
 	eff=54
 },
@@ -1043,20 +1065,20 @@ function default_brain(u)
 				local t=check_unit(val.x,val.y,u)
 				if(t) then
 					if(t.enemy != u.enemy) then
-						target=t
-						break					
+						trgt=t
+						break
 					end 
 				end
 			end
-			if(target) break
+			if(trgt) break
 		end
 	end
 	
-	if(target) then
-		atkdata.atk(u,target,atkdata)
+	if(trgt) then
+		atkdata.atk(u,trgt,atkdata)
 		u.ap -= atkdata.ap
 		movetimer=action_time
-		action_announce=u.name.." used "..atkdata.name.." on "..target.name
+		action_announce=u.name.." used "..atkdata.name.." on "..trgt.name
 		return
 	elseif(u.ap >= u.move_cost) then
 		target=find_shortest(u.nav,not u.enemy)
@@ -1092,8 +1114,8 @@ creatures={
 	["goblin"] = "a foul creature\nof the wastes\ndo not come between\nthem and treasure.",
 	["anya"] = "archmage\nanya volkovia\nskilled in\nthe deployment\nof fire magics.",
 	["rachel"] = "rachel llyadwell\nblademaster of\nthe forest\nkingdom of campton.",
-	["slime"] = "sentient discharge\nfrom dark\nexperiments.\nvery sticky."
-
+	["slime"] = "sentient discharge\nfrom dark\nexperiments.\nvery sticky.",
+	["father"] = "a priest of the\nvalley"
 }
 -->8
 --classes
@@ -1256,7 +1278,7 @@ end
 
 
 function begin_encounter(encounter,environment)
-	generate_battlefield(16,13,environment)
+	generate_battlefield(16,14,environment)
 	game_state="placement"
 	unplaced = {}
 	units={}
@@ -1306,21 +1328,27 @@ end
 encounters = {
 	{
 		tiles={3,67,84,85},
-		crowd={"goblin"}, --crowd enemies
+		crowd={"troll"}, --crowd enemies
 		num=4, --how many total opponents +- n/2
 		name="a band of goblins", --preceded by "you have encoutnered"
-		icon=12, --icon on the map after retreat
 		weight=25,
 		escape=4
 	},
 		{
 		tiles={3},
 		crowd={"slime"}, --crowd enemies
-		num=6, --how many total opponents +- n/2
+		num=5, --how many total opponents +- n/2
 		name="a sludge of slimes", --preceded by "you have encoutnered"
-		icon=12, --icon on the map after retreat
 		weight=50,
 		escape=1
+	},
+			{
+		tiles={3},
+		crowd={"wolf"}, --crowd enemies
+		num=6, --how many total opponents +- n/2
+		name="a pack of wolves", --preceded by "you have encoutnered"
+		weight=60,
+		escape=10
 	}
 }
 -->8
@@ -1359,15 +1387,15 @@ function battle()
 		lvlups={}
 		for t = 1,#units do
 			if(units[t].enemy)then 
-			 goldreward += max(50,25*units[t].lvl)
-				xpreward += max(50,30*units[t].lvl)
+			 goldreward += max(10,25*units[t].lvl)
+				xpreward += max(10,10*units[t].lvl)
 			end
 		end
 		gold += goldreward
 		foreach(party,function(p) 
 			p.xp += xpreward
-			while(p.xp > 50) do
-				p.xp -= 50
+			while(p.xp > 100) do
+				p.xp -= 100
 				p.lvl+=1
 				copy_stats(p,p.class,p.lvl)
 				if(not find_i(lvlups,p)) add(lvlups,p)
@@ -1398,7 +1426,7 @@ function placement()
 	showcur=true
 	focus=false
 
-	placevalid = (cur.x <= fstart and not has_flag(cur,slds) and not check_unit(cur.x,cur.y))
+	placevalid = (cur.x <= fstart and cur.y < bfield.sy and not has_flag(cur,slds) and not check_unit(cur.x,cur.y))
 	placing=unplaced[1]
 	if(placing.enemy) then
 		while true do
@@ -1438,7 +1466,7 @@ function campaign()
 			armypos+=armyspeed
 
 			encounter=get_encounter(s)
-			if(encounter) make_menu(42,100,44,24,"what do?",{"fight","run"},nil,sel_enc)
+			if(encounter) make_menu(42,100,44,24,"what do?",{"fight","run"},nil,sel_enc,nil,true)
 			--begin_encounter(i,forest)
 		end 
 	end
@@ -1453,9 +1481,8 @@ function sel_enc(n)
 			encounter=nil
 			menus={}
 		else
-			make_menu(42,100,44,24,"caught!",{"fight"},nil,sel_enc)
+			make_menu(42,100,44,24,"caught!",{"fight"},nil,sel_enc,nil,true)
 		end
-
 	end
 end
 
