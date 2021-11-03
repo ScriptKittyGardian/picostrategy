@@ -23,7 +23,6 @@ movetimer=0
 function _init()
 	init_units()
 	add_member(rachel)
-	add_member(priest)
 	init_map()
 	gold=0
 	game_state="campaign"
@@ -52,14 +51,19 @@ end
 function _draw()
 	cls()
 	camera(camx,camy)
-	if(game_state=="battle" or game_state=="placement" or game_state=="victory") then
+	if(game_state=="battle" or game_state=="placement" or game_state=="victory" or game_state=="lose") then
 	map(0,0,flr(camx/8),flr(camy/8),
 				flr(camx/8)+camw,
 		flr(camy/8)+camh)
 		foreach(units,draw_corpse)
 		foreach(units,draw_unit)
 		end
-
+	if(game_state=="lose") then
+		rectfill(0,54,128,76,0)
+		showcur=false
+		print_just("you have been defeated",64,64,8)
+		print_just("reboot to try again",64,72,7)
+	end
 	if(game_state=="battle" ) then
 		line(camx,camy+111,camx+128,camy+111,7)
 		if(act_un and show_stats) then
@@ -182,10 +186,11 @@ function init_units()
 	anya=make_unit("anya",2,"mage","thunder",3,1)
 	select_spells(anya,2)
 	rachel=make_unit("rachel",1,"fighter","sword",1,1)
-	select_spells(rachel,2)
+	select_spells(rachel,1)
 	priest=make_unit("father",31,"mage","heal",2,1)
-	select_spells(priest,2)
-	bowman=make_unit("jeff",1,"fighter","bow",1,1)
+	select_spells(priest,1)
+	bowman=make_unit("jeff",34,"fighter","bow",1,1)
+	recruits={anya,priest,bowman}
 	monsters={
 		["slime"]=make_unit("slime",21,"fighter","squish",1,-3,default_brain,true),
 		["goblin"] =	make_unit("goblin",17,"fighter","sword",1,-1,default_brain,true),
@@ -249,7 +254,7 @@ function move_unit()
 end
 
 function deal_dmg(trgt,atkr,dmg,typ)
-	dmg -= get_stat(trgt,"def")/4
+	dmg -= get_stat(trgt,"def")/2
 	dmg -= dmg*trgt.res[typ]
 	dmg=round(max(1,dmg))
 	field_text(trgt.x,trgt.y-0.5,""..dmg,8)
@@ -330,9 +335,9 @@ atks ={
 },
 ["bow"] = {
 	name="bow",
-	dmg=3,
-	rng=20 ,
-	ap=1,
+	dmg=0.75,
+	rng=3,
+	ap=4,
 	uselos=true, 
 	atk=basic_attack,
 	typ=1, --1 = phyiscal, 2=light, 3=dark
@@ -526,14 +531,14 @@ function navgrid(sx,sy,flgs,mx,use_enemy,enemy)
 		for x=crd.x-1,crd.x+1 do
 			for y=crd.y-1,crd.y+1 do
 				a={x=x,y=y,c=n}
-				local u= check_unit(x,y)
+				local u=check_unit(x,y,nil,true)
 				if(u and use_enemy) then
 					if(u.enemy != enemy) then
 						return stack
 					end
 				end
 				
-				if(not stack_has(stack,a) and in_battle(a) and not has_flag(a,flgs) and not u) then
+				if(not stack_has(stack,a) and in_battle(a) and not has_flag(a,flgs) and not u and not check_unit(a.x,a.y)) then
 							if(use_enemy) then
 								add(stack,a)
 							else
@@ -693,7 +698,7 @@ function find_shortest(nav,enemy)
 		local a= units[i]
 		local cel=adjacent(a.x,a.y,nav)
 
-		if(a.enemy == enemy and cel) then
+		if(a.enemy == enemy and cel and a.alive) then
 			if(cel.c > 0) then
 				if(best) then
 					if(cel.c < bestd) then
@@ -1054,15 +1059,14 @@ function default_brain(u)
 		action_announce=""
 	end
 	
-	target=nil
+	local trgt=nil
 	
 	for i=1,#u.spells do
 		atkdata=atks[u.spells[i]]
 		if(atkdata.ap <= u.ap) then
 			valid_tiles = get_range(u.x,u.y,atkdata.rng,atkdata.uselos)
 			for v=1,#valid_tiles do
-				local val=valid_tiles[v]
-				local t=check_unit(val.x,val.y,u)
+				local t=check_unit(valid_tiles[v].x,valid_tiles[v].y,u)
 				if(t) then
 					if(t.enemy != u.enemy) then
 						trgt=t
@@ -1287,15 +1291,23 @@ function begin_encounter(encounter,environment)
 	for i = 1,#party do
 		add(unplaced,party[i])
 	end
+	
+	if(encounter.bosses) foreach(encounter.bosses,function(a) add(unplaced,monsters[a]) end)
+	
 	for i = 1, encounter.num do
 		add(unplaced,monsters[rnd(encounter.crowd)])
 	end
+	
 	unplaced = sort_party(unplaced)
 end
+
+
 function find_i(l,i)
+
 	for k=1,#l do
 		if(i==l[k]) return true
 	end
+	
 	return false
 end
 
@@ -1328,7 +1340,8 @@ end
 encounters = {
 	{
 		tiles={3,67,84,85},
-		crowd={"troll"}, --crowd enemies
+		crowd={"goblin"}, --crowd enemies
+		bosses={"troll"}, --boss enemies
 		num=4, --how many total opponents +- n/2
 		name="a band of goblins", --preceded by "you have encoutnered"
 		weight=25,
@@ -1342,7 +1355,7 @@ encounters = {
 		weight=50,
 		escape=1
 	},
-			{
+	{
 		tiles={3},
 		crowd={"wolf"}, --crowd enemies
 		num=6, --how many total opponents +- n/2
@@ -1375,12 +1388,22 @@ function battle()
 	focus=false
 	show_stats=true
 	win=true
+	lose=true
 	for i = 1,#units do
-		if(units[i].enemy and units[i].alive) win=false
+		if(units[i].alive) then
+			if(units[i].enemy) then
+			 win=false
+			else
+				lose=false
+			end
+		end
+	end
+	if(lose and #effects == 0 and game_state=="battle") then
+		game_state="lose"
+		
 	end
 	if(win and #effects == 0 and game_state=="battle") then
 		game_state="victory"
-	
 		menus={}
 		goldreward=0
 		xpreward=0
@@ -1402,7 +1425,6 @@ function battle()
 			end
 		end)
 		return
-
 	end
 	if(not act_un) then
 		turn=0
@@ -1419,7 +1441,7 @@ function battle()
 	
 
 	act_un.ap = mid(0,act_un.ap,get_stat(act_un,"spd"))
-	if(act_un.ap <= 0 and #effects == 0) next_turn()
+	if(act_un.ap <= 0 or not act_un.alive and #effects == 0) next_turn()
 end
 
 function placement() 
@@ -1464,7 +1486,13 @@ function campaign()
 			partyx+=nx
 			partyy+=ny
 			armypos+=armyspeed
-
+			if(s == 83) then
+				local m = rnd(recruits)
+				if(m) add_member(m)
+				del(recruits,m)
+				cmap[partyx][partyy] = 3
+				make_menu(30,100,90,24,m.name .. " has joined")
+			end
 			encounter=get_encounter(s)
 			if(encounter) make_menu(42,100,44,24,"what do?",{"fight","run"},nil,sel_enc,nil,true)
 			--begin_encounter(i,forest)
@@ -1553,8 +1581,8 @@ function init_map()
 	update_shadow()
 	mountains(1,mountainw)
 	mountains(mapw,mapw-mountainw+1)
-	for i = 1,4 do
-		v={x=flr(mapw/5 * i)+1,y=rint(1,maph)}
+	for i = 1,3 do
+		v={x=flr(mapw/4 * i)+1,y=rint(1,maph)}
 		add(villages,v)
 		cmap[v.x][v.y] = 83
 	end
@@ -1601,13 +1629,13 @@ end
 
 
 __gfx__
-00000000000aa00000088000bbbbbbbbeeee5eeeaaaaaaaa88888888000000000000001000000000555555550400400040b00b000000000005555500000bb000
-0000000000affa000088f800b33bbbbb88885e88a000000a80000008000000000000611000000660500000050555500640bbbb30066066005151555000bbbb00
-00700700000ffa00008ff800bbbbbbbb88885e88a000000a80000008000000000006610000006600500000050a5a500643abab33055556005555500500abab00
-00077000004444a008666680bbbbbbbb55555555a000000a80000008000100000066100000001000500000054555555543bbb3330a5a500051155000b0bbb300
-0007700000f55fa008f11f80bbbbbbbbe5eeeeeea000000a800000080011000000610000000000005000000555555555b03333030555500651150000b3333330
-007007000004400000055000bbbbbbbb85e88888a000000a8000000801100000001000000000000050000005005556554044440b555555065515000000333bb0
-0000000000f00f0000600600bbbbb33b85e88888a000000a80000008010000000010000000000000500000050060506500b44b00060555500555500000333300
+00000000000aa00000088000bbbbbbbbeeee5eeeaaaaaaaa888888880000000000000010000000005555555504004000406006000000000005555500000bb000
+0000000000affa000088f800b33bbbbb88885e88a000000a80000008000000000000611000000660500000050555500640666630066066005151555000bbbb00
+00700700000ffa00008ff800bbbbbbbb88885e88a000000a80000008000000000006610000006600500000050a5a500643a6a633055556005555500500abab00
+00077000004444a008666680bbbbbbbb55555555a000000a800000080001000000661000000010005000000545555555436663330a5a500051155000b0bbb300
+0007700000f55fa008f11f80bbbbbbbbe5eeeeeea000000a800000080011000000610000000000005000000555555555603333030555500651150000b3333330
+007007000004400000055000bbbbbbbb85e88888a000000a80000008011000000010000000000000500000050055565540444406555555065515000000333bb0
+0000000000f00f0000600600bbbbb33b85e88888a000000a80000008010000000010000000000000500000050060506500644600060555500555500000333300
 000000000440040000500500bbbbbbbb85e88888aaaaaaaa88888888000000000000000000000000555555550060506500300300000555500055555500300300
 111111110000000000000000000000000000000000aaaa00000000000000000000999900009999000066000000000000000000008002222280066000a00ff000
 15553351000555500008007000000000505000000a3333a000000000000000000097790009777790066660000000000000000000a02222006066660050fff600
