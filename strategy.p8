@@ -26,13 +26,11 @@ function _init()
 	init_map()
 	gold=0
 	game_state="campaign"
-	--begin_encounter({slime,slime,goblin,goblin},forest)
 end
 
 
 
 function _update()
-
 	if(game_state=="battle") battle()
 	if(game_state=="campaign") campaign()
 	active_men=menus[#menus]
@@ -51,6 +49,7 @@ end
 function _draw()
 	cls()
 	camera(camx,camy)
+ if(game_state=="victory") showcur=false
 	if(game_state=="battle" or game_state=="placement" or game_state=="victory" or game_state=="lose") then
 	map(0,0,flr(camx/8),flr(camy/8),
 				flr(camx/8)+camw,
@@ -65,6 +64,7 @@ function _draw()
 		print_just("reboot to try again",64,72,7)
 	end
 	if(game_state=="battle" ) then
+  showcur=true
 		line(camx,camy+111,camx+128,camy+111,7)
 		if(act_un and show_stats) then
 			if(not act_un.enemy) then
@@ -173,7 +173,8 @@ function select_spells(st,num)
 	for i = 1,num do
 		while true do
 			cand=charspells[flr(rnd(#charspells)) + 1]
-			if(atks[cand].typ == st.typ  and not list_has(st.spells,cand)) then
+   c = atks[cand]
+			if(atks[cand].typ == st.typ  and not list_has(st.spells,cand) and c.ma <= get_stat(st,"maxma") and c.ap <= get_stat(st,"spd")) then
 				add(st.spells,cand)
 				break
 			end
@@ -184,18 +185,24 @@ end
 
 function init_units()
 	anya=make_unit("anya",2,"mage","thunder",3,1)
-	select_spells(anya,2)
+	select_spells(anya,1)
 	rachel=make_unit("rachel",1,"fighter","sword",1,1)
 	select_spells(rachel,1)
 	priest=make_unit("father",31,"mage","heal",2,1)
 	select_spells(priest,1)
 	bowman=make_unit("jeff",34,"fighter","bow",1,1)
-	recruits={anya,priest,bowman}
+	tim=make_unit("tim",33,"mage","fireball",3,1)
+	select_spells(tim,1)
+	recruits={anya,priest,bowman,tim}
 	monsters={
 		["slime"]=make_unit("slime",21,"fighter","squish",1,-3,default_brain,true),
 		["goblin"] =	make_unit("goblin",17,"fighter","sword",1,-1,default_brain,true),
 		["wolf"] =	make_unit("wolf",11,"fighter","bite",1,-3,default_brain,true),
 		["troll"] = make_unit("troll",12,"tank","hammer",1,1,default_brain,true),
+  ["footman"] = make_unit("footman",32,"fighter","spear",1,4,default_brain,true),
+  ["axeman"] = make_unit("axeman",35,"tank","hammer",1,4,default_brain,true),
+  ["gmage"] = make_unit("curser",29,"mage","fireball",1,1,default_brain,true),
+  ["harpy"] = make_unit("harpy",47,"mage","bite",1,2,harpy_brain,true)
 	}
 end
 
@@ -205,15 +212,15 @@ function place_unit(x,y,unit,copy)
 	unit.x = x
 	unit.y = y
 	add(units,unit)
-	return unit
 end
 
 function get_stat(unit,keyword)
 	return flr(unit[keyword] * unit.modifiers[keyword])
 end
 
-function change_stat(unit,key,change)
-	unit.stats[key] += change
+function change_stat(unit,key,change,limit)
+	unit[key] += change
+ if(limit) unit[key] = min(unit[key],limit)
 end
 
 
@@ -258,7 +265,7 @@ function deal_dmg(trgt,atkr,dmg,typ)
 	dmg -= dmg*trgt.res[typ]
 	dmg=round(max(1,dmg))
 	field_text(trgt.x,trgt.y-0.5,""..dmg,8)
-	if(dmg > 1 and rnd(1) < 0.5) cleanse_buff(trgt,"sleep")
+	if(dmg > 0 and rnd(1) < 0.5) cleanse_buff(trgt,"sleep")
 	trgt.hp -= dmg
 	if(trgt.hp <= 0) trgt.die(trgt)
 end
@@ -266,7 +273,7 @@ end
 
 function basic_attack(user,coord,attack,aoeslave)
 	if(not aoeslave and attack.aoe) then
-		valid_tiles=get_range(coord.x,coord.y,attack.aoe,attack.aoelos)
+		valid_tiles=get_range(coord.x,coord.y,attack.aoe,attack.aoelos,atkdata.min_range)
 			for v = 1,#valid_tiles do
 				basic_attack(user,valid_tiles[v],attack,true)
 			end
@@ -279,12 +286,8 @@ function basic_attack(user,coord,attack,aoeslave)
 				apply_buff(target,b,v)
 			end
 		if(attack.dmg > 0) deal_dmg(target,user,attack.dmg*get_stat(user,"atk"),attack.typ)
-		if(attack.dmg < 0) heal(target,attack.dmg*get_stat(user,"maxhp"))
+		if(attack.dmg < 0) change_stat(target,"hp",attack.dmg*get_stat(user,"maxhp"),get_stat(target,"maxhp"))
 	end
-end
-
-function heal(target,amount)
-	target.hp = mid(0,round(target.hp-amount),get_stat(target,"maxhp"))
 end
 
 function teleport(user,coord,attack)
@@ -317,7 +320,8 @@ charspells = {
 "thunder",
 "hammer",
 "bow",
-"heal"}
+"heal",
+"spear"}
 
 atks ={
 ["sword"] = {
@@ -343,7 +347,8 @@ atks ={
 	typ=1, --1 = phyiscal, 2=light, 3=dark
 	trgtd=true,
 	ma=0,
-	eff=7
+	eff=7,
+ min_range=1.5
 },
 ["hammer"] = {
 	name="hammer",
@@ -403,13 +408,13 @@ atks ={
 	name="sleep",
 	dmg=0,
 	rng=3.5,
-	ap=3,
+	ap=1,
 	uselos=true,
 	atk=basic_attack,
 	typ=2,
 	aoe=1.5,
 	trgtd=true,
-	ma=2, --light
+	ma=3,
 	buffs={["sleep"]=3},
 	aoelos=true,
 	eff=54
@@ -418,13 +423,13 @@ atks ={
 	name="heal",
 	dmg=-0.25,
 	rng=3.5,
-	ap=3,
+	ap=1,
 	uselos=true,
 	atk=basic_attack,
 	typ=2,
 	aoe=1.5,
 	trgtd=true,
-	ma=2,
+	ma=4,
 	aoelos=true,
 	eff=54
 },
@@ -432,25 +437,26 @@ atks ={
 	name="missile",
 	dmg=1.5,
 	rng=4.5,
-	ap=6,
+	ap=2,
 	uselos=true,
 	atk=basic_attack,
 	typ=2, --light
 	trgtd=true,
-	ma=6,
-	eff=64
+	ma=8,
+	eff=64,
+ min_range=2
 },
 ["slime"] = {
 	name="slime",
 	dmg=0.25,
 	rng=2.5,
-	ap=3,
+	ap=1,
 	uselos=true,
 	atk=basic_attack,
 	typ=3, --shadow
-	aoe=2.5,
+	aoe=1,
 	trgtd=true,
-	ma=2,
+	ma=4,
 	aoelos=true,
 	buffs={["slimed"]=2},
 	eff=49
@@ -459,27 +465,40 @@ atks ={
 	name="rift",
 	dmg=0,
 	rng=2,
-	ap=5,
+	ap=3,
 	atk=teleport,
 	typ=3, --shadow
 	trgtd=true,
-	ma=3,
+	ma=7,
 	eff=58
 },
 ["thunder"] = { 
 	name="thunder",
 	dmg=0.5,
 	rng=3.5,
-	ap=5,
+	ap=3,
 	atk=basic_attack,
 	typ=3, --shadow
 	trgtd=true,
 	aoe=2,
 	uselos=true,
 	aoelos=false,
-	ma=5,
+	ma=10,
 	buffs={["def⬇️"]=1},
 	eff=68
+},
+["spear"] = {
+ name="spear",
+ dmg=1,
+ rng=2,
+ ap=5,
+ ma=0,
+ uselos=true,
+ atk=basic_attack,
+ typ=2, --light
+ trgtd=true,
+ eff=7,
+ min_range=1.5
 }
 }
 -->8
@@ -499,9 +518,12 @@ function next_turn()
 		update_buffs(act_un)
 		act_un.ap=get_stat(act_un,"spd")
 		update_nav()
+  mana_regen = 1
+
+  change_stat(act_un,"ma",mana_regen,get_stat(act_un,"maxma"))
 		
 		if(not act_un.enemy) then
-			make_menu(2,76,26,33,nil,{"inspect","move","attack","rest"},nil,b_menu,nil,true)
+			make_menu(2,76,26,33,nil,{"inspect","move","attack","stop"},nil,b_menu,nil,true)
 			cur={x=act_un.x,y=act_un.y}
 		end
 	end
@@ -673,20 +695,17 @@ function los(x1,y1,x2,y2)
 end
 
 --closest crow dist
-function find_closest(x,y,enemy)
-	local closest=nil
-	local d=nil
-	for i=1,#actors do
-		local a = actors[i]
-		if(a.enemy==enemy and (a.x != x or a.y != y)) then
-			if(closest) then
-				if(dist(a.x,a.y,x,y) < d) then 
-					closest=a
-				end
+function find_closest(u,enemy)
+	closest=nil
+	d=10000
+	for i=1,#units do
+		a = units[i]
+		if(a.enemy != enemy) then
+			r=dist(a,u)
+			if(d > r) then 
+				d=r
+				closest=units[i]
 			end
-			else
-				closest=a
-				d=dist(a.x,a.y,x,y)
 		end
 	end
 	return closest
@@ -700,7 +719,7 @@ function find_shortest(nav,enemy)
 		local cel=adjacent(a.x,a.y,nav)
 
 		if(a.enemy == enemy and cel and a.alive) then
-			if(cel.c > 0) then
+			if(cel.c >= 0) then
 				if(best) then
 					if(cel.c < bestd) then
 						best=a
@@ -725,18 +744,22 @@ function pack_string(s,l)
 	return r
 end
 
-function get_range(cx,cy,r,uselos)
+function get_range(cx,cy,r,uselos,min_range)
 	local tor={}
-	intr=round(r)
+	local intr=round(r)
 	for x=cx-intr,cx+intr do
 		for y=cy-intr,cy+intr do
 			if(in_battle({x=x,y=y})) then
-				if(dist({x=cx,y=cy},{x=x,y=y}) <= r) then
-					d=true
-						if((uselos)) then
-							d = los(cx,cy,x,y)
+    local d = dist({x=cx,y=cy},{x=x,y=y})
+				if(d <= r) then
+					local r = true
+						if(uselos) then
+							r = los(cx,cy,x,y)
 						end
-					if(d) add(tor,{x=x,y=y})
+      if(r and min_range) then
+       r = (d > min_range) 
+      end
+					if(r) add(tor,{x=x,y=y})
 				end
 			end
 		end
@@ -906,7 +929,10 @@ function format_spells(spls)
 	rtrn={}
 	for i = 1,#spls do
 		dat=atks[spls[i]]
-		add(rtrn,dat.name .. "("..dat.ap..")")
+		local toadd = dat.name .. "("..dat.ap.." spd"
+		if(dat.ma > 0) toadd = toadd.. " + "..dat.ma.."ma"
+		toadd..=")"
+		add(rtrn,toadd)
 	end
 	return rtrn
 end
@@ -919,7 +945,7 @@ function b_menu(s)
 		make_menu(-4,-4,0,0,nil,nil,move_menu,nil,mm_draw)
 		moved=false
 	elseif(s==3) then -- attack menu
-		make_menu(2,77,64,32,nil,format_spells(act_un.spells),nil,atk_slct)
+		make_menu(2,77,96,32,nil,format_spells(act_un.spells),nil,atk_slct)
 	elseif(s==4) then -- rest
 		next_turn()
 	end
@@ -936,13 +962,13 @@ function atk_slct(s)
 	atkdata=atks[act_un.spells[s]]
 	if(atkdata==nil) return
 	if(atkdata.ap > act_un.ap) then
-		make_menu(32,64,64,16,"not enough ap!")
+		make_menu(32,64,64,16,"not enough spd!")
 		return
 	elseif(atkdata.ma > act_un.ma) then
 		make_menu(32,64,64,16,"not enough mana!")
 		return
 	elseif(atkdata.trgtd) then
-		valid_tiles=get_range(act_un.x,act_un.y,atkdata.rng,atkdata.uselos)
+		valid_tiles=get_range(act_un.x,act_un.y,atkdata.rng,atkdata.uselos,atkdata.min_range)
 		make_menu(0,0,0,0,nil,nil,target_update,nil,target_draw)
 		fired=false
 	end
@@ -987,7 +1013,7 @@ function target_update(m)
 		return
 	end
 	if(stack_has(valid_tiles,cur)) then
-			if(atkdata.aoe) aoe_tiles=get_range(cur.x,cur.y,atkdata.aoe,atkdata.aoelos)
+			if(atkdata.aoe) aoe_tiles=get_range(cur.x,cur.y,atkdata.aoe,atkdata.aoelos,atkdata.min_range)
 			if(btnp(❎) ) then
 				atkdata.atk(act_un,cur,atkdata)
 				act_un.ap-=atkdata.ap
@@ -1045,70 +1071,111 @@ action_time=60 --how many frames to wait after performing an action
 action_announce=""
 
 
+function brain_update(u)
+ if(moving) return false
+
+ if(not u.alive) then 
+  next_turn()
+  return false
+ end
+ if(movetimer!=0) then
+  movetimer-=1
+  return false
+ else
+  action_announce=""
+ end
+ return true
+end
+
+function harpy_brain(u)
+	if(not brain_update(u)) return
+ target=find_closest(u,u.enemy)
+	atkdata=atks["bite"]
+	if(not target.buffs["sleep"] and rnd(10) <= 1) then
+		atkdata=atks["sleep"]
+	end
+	if(move_and_attack(u,target,atkdata)) next_turn()
+end
+
 
 function default_brain(u)
-	if(moving) return
-
-	if(not u.alive) then 
-		next_turn()
-		return
-	end
-	if(movetimer!=0) then
-		movetimer-=1
-		return
-	else
-		action_announce=""
-	end
-	
-	local trgt=nil
-	
-	for i=1,#u.spells do
-		atkdata=atks[u.spells[i]]
-		if(atkdata.ap <= u.ap) then
-			valid_tiles = get_range(u.x,u.y,atkdata.rng,atkdata.uselos)
-			for v=1,#valid_tiles do
-				local t=check_unit(valid_tiles[v].x,valid_tiles[v].y,u)
-				if(t) then
-					if(t.enemy != u.enemy) then
-						trgt=t
-						break
-					end 
-				end
-			end
-			if(trgt) break
-		end
-	end
-	
-	if(trgt) then
-		atkdata.atk(u,trgt,atkdata)
-		u.ap -= atkdata.ap
-		movetimer=action_time
-		action_announce=u.name.." used "..atkdata.name.." on "..trgt.name
-		return
-	elseif(u.ap >= u.move_cost) then
-		target=find_shortest(u.nav,not u.enemy)
-		if(target and not moving) then	
-			if(dist(u,target) > 2) then		
-				dest=adjacent(target.x,target.y,u.nav)
-				path=find_path(dest,u.nav)
-				draw_path(path)
-				if(#path > 1) then
-					moving=true
-					return
-				end
-			end
-		end
-	end
-	next_turn()
-	
+ if(not brain_update(u)) return
+ target=find_closest(u,u.enemy)
+ atkdata=atks[u.spells[1]]
+ if(move_and_attack(u,target,atkdata)) next_turn()
 end
+
+function move_and_attack(u,target,atkdata)
+ tomove=get_attack_pos(u,target,atkdata)
+ if(tomove) then 
+  if(tomove.c > 0) then
+   if(u.ap > 0) navigate_to_point(u,tomove)
+   return false
+  else
+  	 if(u.ap >= atkdata.ap) then 
+	   if(#effects == 0) use_spell(u,target,atkdata)
+	   return false
+	  end
+	 end
+ end
+ return true
+end
+
+function get_attack_pos(u,target,atkdata)
+
+ mrange = max(atkdata.min_range,atkdata.aoe)
+ local valid_tiles=get_range(target.x,target.y,atkdata.rng,atkdata.uselos,atkdata.aoe)
+ 
+ 
+ best=nil
+ for i = 1,#valid_tiles do
+  d = stack_has(u.nav,valid_tiles[i])
+  if(d) then
+	  if(best == nil or d.c < best.c) then
+	   best=d
+	  end
+  end
+ end
+ return best
+end
+
+
+function navigate_to_point(u,dest)
+ path=find_path(dest,u.nav)
+ if(#path > 1) then
+  moving=true   
+ end
+end
+
+
+function get_enemy_in_range(u,atkdata)
+ valid_tiles = get_range(u.x,u.y,atkdata.rng,atkdata.uselos,atkdata.min_range)
+ for v=1,#valid_tiles do
+  local t=check_unit(valid_tiles[v].x,valid_tiles[v].y,u)
+  if(t) then
+   if(t.enemy != u.enemy) then
+    return t
+   end 
+  end
+ end
+ return nil
+end
+
+function use_spell(u,trgt,atkdata)
+  atkdata.atk(u,trgt,atkdata)
+  u.ap -= atkdata.ap
+  movetimer=action_time
+  action_announce=u.name.." used "..atkdata.name.." on "..trgt.name
+  return
+end
+
 -->8
 --descriptions
 
 
 tiles={
 	[3] = "grass",
-	[4] = "wall",
+	[4] = "bricks",
 	[42] = "daisy",
 	[43] = "tulip",
 	[46] = "grass",
@@ -1120,7 +1187,13 @@ creatures={
 	["anya"] = "archmage\nanya volkovia\nskilled in\nthe deployment\nof fire magics.",
 	["rachel"] = "rachel llyadwell\nblademaster of\nthe forest\nkingdom of campton.",
 	["slime"] = "sentient discharge\nfrom dark\nexperiments.\nvery sticky.",
-	["father"] = "a priest of the\nvalley"
+	["father"] = "a priest of the\nvalley",
+ ["jeff"] = "a woodsman\nof some note.",
+ ["troll"] = "brutish creatures\nwith more brawl\nthan brain.",
+ ["wolf"] = "small but ferocious.",
+ ["footman"] = "soldier of darkness",
+ ["axeman"] = "soldier of darkness",
+ ["tim"] = "he likes to\nblow things up."
 }
 -->8
 --classes
@@ -1133,16 +1206,16 @@ classes = {
 		["maxma"]=6
 	},
 	["fighter"]={
-		["maxhp"]=17,
+		["maxhp"]=15,
 		["atk"]=16,
-		["def"]=7,
+		["def"]=5,
 		["spd"]=8,
 		["maxma"]=4
 	},
 	["mage"] = {
 		["maxhp"]=10,
 		["atk"]=14,
-		["def"]=5,
+		["def"]=3,
 		["spd"]=5,
 		["maxma"]=12
 	}
@@ -1232,7 +1305,6 @@ function cleanse_buff(unit,buff)
 		unit.modifiers[key] -= val
 	end
 	unit.buffs[buff] = nil
-
 end
 -->8
 --party logic
@@ -1294,8 +1366,8 @@ function begin_encounter(encounter,environment)
 	end
 	
 	if(encounter.bosses) foreach(encounter.bosses,function(a) add(unplaced,monsters[a]) end)
-	
-	for i = 1, encounter.num do
+	b = min(rint(encounter.num/2,encounter.num),#party + 2)
+	for i = 1, b do
 		add(unplaced,monsters[rnd(encounter.crowd)])
 	end
 	
@@ -1363,7 +1435,32 @@ encounters = {
 		name="a pack of wolves", --preceded by "you have encoutnered"
 		weight=60,
 		escape=10
-	}
+	},
+	{
+		tiles={3},
+		crowd={"goblin"},
+		num=2,
+		name="goblin enchanter",
+		weight=40,
+		escape=6,
+		bosses={"gmage"}
+	},
+	{
+		tiles={3},
+		crowd={"harpy"},
+		num=3,
+		name="band of harpies",
+		weight=300,
+		escape=15
+		}
+		
+}
+
+army = {
+ crowd={"footman","axeman"},
+ num=10,
+ name="soldiers of darkness",
+ escape=200
 }
 -->8
 --environment
@@ -1414,7 +1511,7 @@ function battle()
 		for t = 1,#units do
 			if(units[t].enemy)then 
 			 goldreward += max(10,25*units[t].lvl)
-				xpreward += max(10,10*units[t].lvl)
+				xpreward += max(10,20*units[t].lvl)
 			end
 		end
 		gold += goldreward
@@ -1424,6 +1521,7 @@ function battle()
 				p.xp -= 100
 				p.lvl+=1
 				copy_stats(p,p.class,p.lvl)
+    if(lvl == 2) select_spells(p,1)
 				if(not find_i(lvlups,p)) add(lvlups,p)
 			end
 		end)
@@ -1497,6 +1595,8 @@ function campaign()
 				make_menu(30,100,90,24,m.name .. " has joined")
 			end
 			encounter=get_encounter(s)
+   if(partyx+1 < armypos) encounter = army
+
 			if(encounter) make_menu(42,100,44,24,"what do?",{"fight","run"},nil,sel_enc,nil,true)
 			--begin_encounter(i,forest)
 		end 
@@ -1651,11 +1751,11 @@ __gfx__
 6000000000011110040333306650000000000000d20dd000bbbb3bbbbbbbbbbbccccccccccccccccbbbbbbbbbbbbbbbb000000000000a600bbbbbbbb00000000
 6006600010111100403333006658888000055550ddd0d000bb3333bbbbbbbbbbcccccccccc77ccccbbbbbbbbbb88888b000000000000a000bbbbbbbb00000000
 40666600505f5100405f530060577780605555002d2d0000b333333bbbb55bbbccccccccc7cc7cccbbbb7bbbbbb888bb000000006a00a000bbbbbbbb00000000
-40868800f0fff100f0fff3000058788060838500d2d2d000b333333bbb5555bbccccccccccccccccbbb7a7bbbbb888bb000000000aaaaa06bbbbbbbb00000000
-8888844051111110433333300058888830333550dddd0000bbb44bbbbb55555bccccccccccccccccbbbb7bbbbbbb3bbb05500000aaaaaaaabbbbbbbb00000000
-40888440501111f0404444f000888888055555032dd00000bbb44bbbb555555bcccccccccccc77ccbbbb3bbbbbbb3bbb005000006166aaa0bbbbbbbb00000000
-4088880050111110403333000058888000555500d22d0000bbb44bbbbbbbbbbbccccccccccc7cc7cbbbb3bbbbbbb3bbb00600000a66aaaa6bbbbbbbb00000000
-4080080050111111043003000058008000500500ddd22000bbb44bbbbbbbbbbbccccccccccccccccbbbb3bbbbbbb3bbb006000000aaaaa00bbbbbbbb00000000
+40868800f0fff100f0fff3000058788060838500d2d2d000b333333bbb5555bbccccccccccccccccbbb7a7bbbbb888bb000000000aaaaa06bbbbbbbb00aaaa00
+8888844051111110433333300058888830333550dddd0000bbb44bbbbb55555bccccccccccccccccbbbb7bbbbbbb3bbb05500000aaaaaaaabbbbbbbb112f2a11
+40888440501111f0404444f000888888055555032dd00000bbb44bbbb555555bcccccccccccc77ccbbbb3bbbbbbb3bbb005000006166aaa0bbbbbbbb01fff1a0
+4088880050111110403333000058888000555500d22d0000bbb44bbbbbbbbbbbccccccccccc7cc7cbbbb3bbbbbbb3bbb00600000a66aaaa6bbbbbbbb001881a0
+4080080050111111043003000058008000500500ddd22000bbb44bbbbbbbbbbbccccccccccccccccbbbb3bbbbbbb3bbb006000000aaaaa00bbbbbbbb00000f0f
 0066660000000000000000000000000000000000000cccc000000000000000000000000000999900005555500555500005000000000011106666666666666666
 0677776000000000000003303300033000000000000000c000000e000007ee000e00000009aaaa90051151555555500055000000000010016667666666666666
 677777760003300000330b303b0003300000000000000c000000e7e000000000000000009aa7aaa9551111555511100050000000000010016677766666666666
