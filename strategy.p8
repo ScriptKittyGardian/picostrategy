@@ -24,7 +24,7 @@ function _init()
 	init_units()
 	add_member(rachel)
 	init_map()
-	gold=0
+	gold=100
 	game_state="campaign"
 end
 
@@ -118,7 +118,6 @@ function _draw()
 	if(active_men) active_men.draw(active_men)
 
 	foreach(effects,draw_effect)
-	--print(stat(7),0,0)
 end
 -->8
 --units
@@ -286,9 +285,16 @@ function basic_attack(user,coord,attack,aoeslave)
 				apply_buff(target,b,v)
 			end
 		if(attack.dmg > 0) deal_dmg(target,user,attack.dmg*get_stat(user,"atk"),attack.typ)
-		if(attack.dmg < 0) change_stat(target,"hp",attack.dmg*get_stat(user,"maxhp"),get_stat(target,"maxhp"))
+		if(attack.dmg < 0) heal(target,user,attack.dmg*get_stat(user,"atk"))
 	end
 end
+
+function heal(target,user,amount)
+	amount=round(amount)
+	change_stat(target,"hp",amount,get_stat(target,"maxhp"))
+	if(game_state=="battle") field_text(target.x,target.y-0.5,""..amount*-1)
+end
+
 
 function teleport(user,coord,attack)
 	newcord={}
@@ -695,12 +701,13 @@ function los(x1,y1,x2,y2)
 end
 
 --closest crow dist
-function find_closest(u,enemy)
+function find_closest(u,enemy,alive)
 	closest=nil
+	if(alive == nil) alive = true
 	d=10000
 	for i=1,#units do
 		a = units[i]
-		if(a.enemy != enemy) then
+		if(a.enemy != enemy and a.alive == alive) then
 			r=dist(a,u)
 			if(d > r) then 
 				d=r
@@ -1239,7 +1246,6 @@ function copy_stats(stats,class,lvl)
 	end
 	stats["hp"] = stats["maxhp"]
 	stats["ma"] = stats["maxma"]
-	
 end
 -->8
 --buffs woooooo
@@ -1360,7 +1366,8 @@ function begin_encounter(encounter,environment)
 	unplaced = {}
 	units={}
 	menus={}
-	
+	cur.x = 8
+	cur.y = 7
 	for i = 1,#party do
 		add(unplaced,party[i])
 	end
@@ -1416,9 +1423,17 @@ encounters = {
 		crowd={"goblin"}, --crowd enemies
 		bosses={"troll"}, --boss enemies
 		num=4, --how many total opponents +- n/2
-		name="a band of goblins", --preceded by "you have encoutnered"
-		weight=25,
-		escape=4
+		name="a troll gang", --preceded by "you have encoutnered"
+		weight=10,
+		escape=2
+	},
+	{
+		tiles={3,67,84,85},
+		crowd={"goblin"},
+		num=5, 
+		name="goblin band", 
+		weight=20,
+		escape=6
 	},
 		{
 		tiles={3},
@@ -1450,9 +1465,18 @@ encounters = {
 		crowd={"harpy"},
 		num=3,
 		name="band of harpies",
-		weight=300,
+		weight=10,
 		escape=15
-		}
+	},
+	{
+		tiles={67,84,85},
+		options={
+			{"pie",25,"hp",4}
+		},
+		name="wandering trader",
+		weight=20000,
+		escape=0
+	}
 		
 }
 
@@ -1596,17 +1620,24 @@ function campaign()
 			end
 			encounter=get_encounter(s)
    if(partyx+1 < armypos) encounter = army
-
-			if(encounter) make_menu(42,100,44,24,"what do?",{"fight","run"},nil,sel_enc,nil,true)
-			--begin_encounter(i,forest)
-		end 
+			if(encounter) then
+				n="fight"
+				if(encounter.options) n="talk"
+			 make_menu(42,100,44,24,"what do?",{n,"run"},nil,sel_enc,nil,true)
+			end
+			end 
 	end
 end
 
 function sel_enc(n)
-	if(n == 1) then 
-		begin_encounter(encounter,forest)
-		encounter=nil
+	if(n == 1) then
+		if(encounter.options) then
+			items={rnd(encounter.options),rnd(encounter.options)}
+			make_menu(42,100,44,24,"buy something?",{items[1][1].."("..items[1][2]..")",items[2][1].."("..items[2][2]..")"},nil,buy_item,nil,true)		
+		else
+			begin_encounter(encounter,forest)
+			encounter=nil
+		end 
 	elseif(n == 2) then
 		if(rnd(get_stat(party[#party],"spd")) > encounter.escape) then
 			encounter=nil
@@ -1617,6 +1648,22 @@ function sel_enc(n)
 	end
 end
 
+
+function buy_item(n)
+	i = items[n]
+	if(gold >= i[2]) then
+		gold -= i[2]
+		pname={}
+		foreach(party,function(a) add(pname,a.name) end)
+		make_menu(42,80,44,44,"increase "..i[3].." by "..i[4],pname,nil,sel_apply,nil,true)
+	end
+end
+
+function sel_apply(n)
+	change_stat(party[n],i[3],i[4])
+	encounter=nil
+	menus={}
+end
 -->8
 --campaign map
 
@@ -1634,9 +1681,6 @@ map_tiles={
 40,
 41
 }
-
-
-
 
 shadow_edge={87,88,89}
 d_edge={}
@@ -1974,7 +2018,7 @@ __map__
 0303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 __sfx__
-a101000000250112501425016250182501a2501d2501f250212500020000200002000020000200002000020000200002000020000200002000020000200002000020000200002000020000200002000020000200
+a109000000250112501425016250182501a2501d2501f250212500020000200002000020000200002000020000200002000020000200002000020000200002000020000200002000020000200002000020000200
 01100000180501b0501f0501b0501f050220502405000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 011000000c0500f050130500f0501305016050180550c0550c0550c0550c0550c0000b0000b0000b0000b000130001300013000130000e0000e0000e0000e0000000000000000000000000000000000000000000
 001018000c0550c0550c0550a0550a0550a0550805508055080550705507055070550505505055050550705507055070550805508055080550505505055050550c0000c0000c0001600016000160000000000000
