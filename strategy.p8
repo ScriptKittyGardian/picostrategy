@@ -109,9 +109,9 @@ function _draw()
 	
 	
 	elseif(game_state=="campaign") then
-
 		draw_map()
-
+		spr(57,camx,camy)
+		print(""..gold,camx + 10,camy+2,10)
 	end
 	if(showcur) spr(5,cur.x*8,cur.y*8)
 
@@ -214,11 +214,16 @@ function place_unit(x,y,unit,copy)
 end
 
 function get_stat(unit,keyword)
-	return flr(unit[keyword] * unit.modifiers[keyword])
+
+	toreturn= unit[keyword] 
+	if(unit.modifiers[keyword]) toreturn *= unit.modifiers[keyword]
+	if(toreturn) return flr(toreturn)
+	return nil
 end
 
-function change_stat(unit,key,change,limit)
+function change_stat(unit,key,change)
 	unit[key] += change
+	limit = get_stat(unit,"max"..key)
  if(limit) unit[key] = min(unit[key],limit)
 end
 
@@ -291,7 +296,7 @@ end
 
 function heal(target,user,amount)
 	amount=round(amount)
-	change_stat(target,"hp",amount,get_stat(target,"maxhp"))
+	change_stat(target,"hp",-amount)
 	if(game_state=="battle") field_text(target.x,target.y-0.5,""..amount*-1)
 end
 
@@ -490,7 +495,7 @@ atks ={
 	uselos=true,
 	aoelos=false,
 	ma=10,
-	buffs={["def⬇️"]=1},
+	buffs={["def⬇️"]=2},
 	eff=68
 },
 ["spear"] = {
@@ -501,7 +506,7 @@ atks ={
  ma=0,
  uselos=true,
  atk=basic_attack,
- typ=2, --light
+ typ=1,
  trgtd=true,
  eff=7,
  min_range=1.5
@@ -843,7 +848,7 @@ function print_just(t,x,y,c)
 	end
 	longest_seg=max(seg,longest_seg)
 
-	print(t,x-flr(longest_seg),y-(segs*3),c)
+	print(t,camx + x-flr(longest_seg),camy + y-(segs*3),c)
 end
 
 function draw_menu(m)
@@ -1340,6 +1345,41 @@ function sort_party(party)
 	return party
 end
 -->8
+--environment
+
+
+function get_environment(tile)
+	for t=1,#environments do
+		e=environments[t]
+		if(find_i(e.mtiles,tile)) return e
+	end
+	
+end
+
+forest={
+	ground={3,46,46},
+	mtiles={38,103,104},
+	danger=70,
+	deco={42,43},
+	obsticles={38,39,103},
+	obsnum=20
+}
+grass={
+	ground={3,46,46},
+	mtiles={3,46},
+	danger=60,
+	deco={42,43},
+	obsticles={4,39},
+	obsnum=10
+}
+roads={
+	ground={67,84,85},
+	mtiles={67,84,85},
+	danger=60
+}
+environments={forest,grass,roads}
+
+-->8
 --encounters
 function generate_battlefield(w,h,env)
 	bfield = {sx=w,sy=h}
@@ -1348,14 +1388,16 @@ function generate_battlefield(w,h,env)
 	for x = 0,w do
 		for y = 0,h do
 			mset(x,y,rnd(env.ground))
-			if(rnd(1) > 0.95) mset(x,y,rnd(env.deco))
+			if(rnd(1) > 0.95 and env.deco) mset(x,y,rnd(env.deco))
 		end
 	end
-	obsticles=flr(rnd(env.obsnum/2) + env.obsnum/2)
-	for o = 0,obsticles do
-		ox = flr(rnd(w+1))
-		oy = flr(rnd(h+1))
-		mset(ox,oy,rnd(env.obsticles))
+	if(env.obsticles) then
+		obsticles=flr(rnd(env.obsnum/2) + env.obsnum/2)
+		for o = 0,obsticles do
+			ox = flr(rnd(w+1))
+			oy = flr(rnd(h+1))
+			mset(ox,oy,rnd(env.obsticles))
+		end
 	end
 end
 
@@ -1366,6 +1408,8 @@ function begin_encounter(encounter,environment)
 	unplaced = {}
 	units={}
 	menus={}
+	camx=0
+	camy=0
 	cur.x = 8
 	cur.y = 7
 	for i = 1,#party do
@@ -1392,16 +1436,16 @@ function find_i(l,i)
 end
 
 
-function get_encounter(tile)
+function get_encounter(env)
+	if(not env) return nil
 	e={}
 	weight_sum=0
-	if(rnd(100) > danger[tile]) return nil
+	if(rnd(100) > env.danger) return nil
 	
 	for i=1,#encounters do
 		b=encounters[i]
-		if(find_i(b.tiles,tile)) add(e,b) weight_sum+= b.weight
+		if(find_i(b.env,env)) add(e,b) weight_sum+= b.weight
 	end
-	
 	r = rnd(weight_sum)
 	w=0
 
@@ -1409,6 +1453,7 @@ function get_encounter(tile)
 		w+= e[i].weight
 
 		if(r < w) then
+			
 			return e[i]
 		end
 	end
@@ -1419,7 +1464,7 @@ end
 
 encounters = {
 	{
-		tiles={3,67,84,85},
+		env={roads,grass},
 		crowd={"goblin"}, --crowd enemies
 		bosses={"troll"}, --boss enemies
 		num=4, --how many total opponents +- n/2
@@ -1428,7 +1473,7 @@ encounters = {
 		escape=2
 	},
 	{
-		tiles={3,67,84,85},
+		env={roads,grass},
 		crowd={"goblin"},
 		num=5, 
 		name="goblin band", 
@@ -1436,7 +1481,7 @@ encounters = {
 		escape=6
 	},
 		{
-		tiles={3},
+		env={grass},
 		crowd={"slime"}, --crowd enemies
 		num=5, --how many total opponents +- n/2
 		name="a sludge of slimes", --preceded by "you have encoutnered"
@@ -1444,7 +1489,7 @@ encounters = {
 		escape=1
 	},
 	{
-		tiles={3},
+		env={grass},
 		crowd={"wolf"}, --crowd enemies
 		num=6, --how many total opponents +- n/2
 		name="a pack of wolves", --preceded by "you have encoutnered"
@@ -1452,7 +1497,7 @@ encounters = {
 		escape=10
 	},
 	{
-		tiles={3},
+		env={grass},
 		crowd={"goblin"},
 		num=2,
 		name="goblin enchanter",
@@ -1461,7 +1506,7 @@ encounters = {
 		bosses={"gmage"}
 	},
 	{
-		tiles={3},
+		env={grass},
 		crowd={"harpy"},
 		num=3,
 		name="band of harpies",
@@ -1469,12 +1514,29 @@ encounters = {
 		escape=15
 	},
 	{
-		tiles={67,84,85},
+		env={roads},
 		options={
-			{"pie",25,"hp",4}
+			{"pie",25,"hp",4},
+			{"bun",10,"hp",2},
+			{"bread",50,"hp",10},
+			{"cookie",30,"spd",1},
+			{"cookie",30,"hp",5}
 		},
-		name="wandering trader",
-		weight=20000,
+		name="wandering baker",
+		weight=20,
+		escape=0
+	},
+		{
+		env={roads},
+		options={
+			{"armor",50,"def",2},
+			{"shoes",100,"spd",2},
+			{"mana vial",40,"maxma",5},
+			{"gold heart",100,"maxhp",10},
+			{"nails",70,"atk",2}
+		},
+		name="wandering merchant",
+		weight=15,
 		escape=0
 	}
 		
@@ -1485,24 +1547,6 @@ army = {
  num=10,
  name="soldiers of darkness",
  escape=200
-}
--->8
---environment
-
-danger={
-	[3]  = 65,
-	[67] = 25,
-	[84] = 25,
-	[85] = 25,
-	[83] = 0
-}
-
-
-forest={
-	ground={3,46,46},
-	deco={42,43},
-	obsticles={4,39},
-	obsnum=10
 }
 
 
@@ -1522,22 +1566,22 @@ function battle()
 			end
 		end
 	end
-	if(lose and #effects == 0 and game_state=="battle") then
+	if(lose and #effects == 0) then
 		game_state="lose"
-		
 	end
-	if(win and #effects == 0 and game_state=="battle") then
+	if(win and #effects == 0) then
 		game_state="victory"
 		menus={}
 		goldreward=0
 		xpreward=0
 		lvlups={}
-		for t = 1,#units do
-			if(units[t].enemy)then 
-			 goldreward += max(10,25*units[t].lvl)
-				xpreward += max(10,20*units[t].lvl)
+		
+		foreach(units,function(a) 
+			if(a.enemy)then 
+			 goldreward += max(10,25*a.lvl)
+				xpreward += max(10,20*a.lvl)
 			end
-		end
+		end)
 		gold += goldreward
 		foreach(party,function(p) 
 			p.xp += xpreward
@@ -1558,12 +1602,11 @@ function battle()
 	if(moving) then
 		movetimer+=1
 		if(movetimer > movespeed) then
-		move_unit()
-		movetimer=0
+			move_unit()
+			movetimer=0
 		end
 	end
-	if(act_un.enemy) act_un.brain(act_un)
-	
+	if(act_un.brain) act_un.brain(act_un)
 
 	act_un.ap = mid(0,act_un.ap,get_stat(act_un,"spd"))
 	if(act_un.ap <= 0 or not act_un.alive and #effects == 0) next_turn()
@@ -1605,11 +1648,13 @@ function campaign()
 	if(btnp(➡️)) nx=1 ny = 0
 	if(btnp(⬆️)) ny=-1 nx=0
 	if(btnp(⬇️)) ny=1 nx = 0
+
 	if(ny+nx != 0 and encounter == nil) then
 		local s=cmap[partyx+nx][partyy+ny]
 		if(not fget(s,0)) then
 			partyx+=nx
 			partyy+=ny
+			
 			armypos+=armyspeed
 			if(s == 83) then
 				local m = rnd(recruits)
@@ -1618,7 +1663,8 @@ function campaign()
 				cmap[partyx][partyy] = 3
 				make_menu(30,100,90,24,m.name .. " has joined")
 			end
-			encounter=get_encounter(s)
+			cur_env=get_environment(s)
+			encounter=get_encounter(cur_env)
    if(partyx+1 < armypos) encounter = army
 			if(encounter) then
 				n="fight"
@@ -1627,15 +1673,17 @@ function campaign()
 			end
 			end 
 	end
+	camx=mid(0,(partyx-8)*8,mapw*8-128)
+
 end
 
 function sel_enc(n)
 	if(n == 1) then
 		if(encounter.options) then
 			items={rnd(encounter.options),rnd(encounter.options)}
-			make_menu(42,100,44,24,"buy something?",{items[1][1].."("..items[1][2]..")",items[2][1].."("..items[2][2]..")"},nil,buy_item,nil,true)		
+			make_menu(32,90,64,34,"buy something?",{items[1][1].."("..items[1][2].."g)",items[2][1].."("..items[2][2].."g)","nope"},nil,buy_item,nil,true)		
 		else
-			begin_encounter(encounter,forest)
+			begin_encounter(encounter,cur_env)
 			encounter=nil
 		end 
 	elseif(n == 2) then
@@ -1651,11 +1699,16 @@ end
 
 function buy_item(n)
 	i = items[n]
+	if(n == 3) then
+		encounter = nil
+		menus={}
+		return
+	end
 	if(gold >= i[2]) then
 		gold -= i[2]
 		pname={}
-		foreach(party,function(a) add(pname,a.name) end)
-		make_menu(42,80,44,44,"increase "..i[3].." by "..i[4],pname,nil,sel_apply,nil,true)
+		foreach(party,function(a) add(pname,a.name .. "(" .. get_stat(a,i[3])..")") end)
+		make_menu(22,80,84,44,"increase "..i[3].." by "..i[4],pname,nil,sel_apply,nil,true)
 	end
 end
 
@@ -1667,20 +1720,13 @@ end
 -->8
 --campaign map
 
-mapw=16
+mapw=32
 maph=16
 cmap={}
 armypos=1
 armyspeed=0.4
 villages={}
 mountainw=3
-roads={67,84,85}
-map_tiles={
-3,
-38,
-40,
-41
-}
 
 shadow_edge={87,88,89}
 d_edge={}
@@ -1698,10 +1744,10 @@ end
 
 function road(sx,sy,ex,ey)
 	for x = sx,ex,sgn(ex-sx) do
-		if(x != ex and x != sx) cmap[x][sy] = rnd(roads)
+		if(x != ex and x != sx) cmap[x][sy] = rnd(roads.mtiles)
 	end
 	for y = sy,ey,sgn(ey-sy) do
-		if(y != ey) cmap[ex][y] = rnd(roads)
+		if(y != ey) cmap[ex][y] = rnd(roads.mtiles)
 	end
 end
 
@@ -1720,7 +1766,7 @@ function init_map()
 	for i = 1,mapw do 
 		add(cmap,{})
 		for y = 1,maph do
-			add(cmap[i],map_tiles[1])
+			add(cmap[i],rnd(grass.mtiles))
 		end
 	end
 	partyx=2
@@ -1728,6 +1774,8 @@ function init_map()
 	update_shadow()
 	mountains(1,mountainw)
 	mountains(mapw,mapw-mountainw+1)
+	biome(rint(mountainw,mapw-mountainw),rint(1,maph),forest.mtiles,10)
+
 	for i = 1,3 do
 		v={x=flr(mapw/4 * i)+1,y=rint(1,maph)}
 		add(villages,v)
@@ -1745,10 +1793,23 @@ function init_map()
 		v=villages[i]
 		--cmap[v.x][v.y] = v.k
 	end
+	
 end
 
+function on_map(x,y)
+	return (x < mapw and x > 0 and y < maph and y > 0) 
+end
 
-
+function biome(x,y,b,s)
+	cmap[x][y] = rnd(b)
+	for a=x-1,x+1 do
+		for c=y-1,y+1 do
+			if(not(a==x and c==y)) then
+				if(on_map(a,c) and rnd(10) < s and find_i(grass.mtiles,cmap[a][c])) biome(a,c,b,s-1)
+			end
+		end
+	end
+end
 
 
 function draw_map()
@@ -1768,7 +1829,7 @@ function draw_map()
 	spr(party[1].k,partyx*8-8,partyy*8-8)
 
 	if(encounter) then
-		rectfill(0,54,128,76,0)
+		rectfill(camx,camy+54,camx+128,camy+76,0)
 		print_just(encounter.name,64,70,7)
 		print_just("spotted!",64,60,8)
 	end
@@ -1824,14 +1885,14 @@ __gfx__
 000660000070070070000007449994bb944444444644464411111111121100001200000011111000000000000000000000000000000000000000000000000000
 000000000000000070000007b49994bb944444444444444411111111121100001200000011111000000000000000000000000000000000000000000000000000
 000000000000000007000070b49994bb499444444444444411111111111000001110000011111000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+bbbabbbb5b5bb5b5ccccccccccccccccccccccccaaaaaaaaaaaaaaaabbb33bbbbbbbbbbb00000000000000000000000000000000000000000000000000000000
+bbaaabbb555bb555c171ccccccccc117ccccccccaaaaa9aaaa9aaaaabb3333bbb3bbbbbb00000000000000000000000000000000000000000000000000000000
+bb6a6bbb56555565cccccccccccccccccc11ccccaaaaaaaaaaaaaaaab333333b343bbbbb00000000000000000000000000000000000000000000000000000000
+b66a66bb56666665ccccccccccccccccccccccccaaaaaaaaaaaaaaaa33333333b4bbbbbb00000000000000000000000000000000000000000000000000000000
+6677766b56666665ccccc7cccccccccccccccc7caa9aaaaaaaaaaaaa33344333b4bbbb3b00000000000000000000000000000000000000000000000000000000
+6677766b56611665cccc111cccccccccccccccccaaaaaaaaaaaaaaaabbb44bbbb4bbb34300000000000000000000000000000000000000000000000000000000
+b67176bb56611665ccccccccc117cccccccc111caaaaaa9aaa9aaaa9bbb44bbbb4bbbb4b00000000000000000000000000000000000000000000000000000000
+b67176bb55511555ccccccccccccccccccccccccaaaaaaaaaaaaaaaabbb44bbbb4bbbb4b00000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
